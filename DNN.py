@@ -13,7 +13,7 @@ import math
 import import_cifar
 
 # global
-learn_weight = 0.02
+learn_weight = 0.014
 sigmoid_a = 1.0
 is_sigmoid = 1
 layer_num = 3
@@ -21,7 +21,7 @@ layer_num = 3
 flg1 = 0
 img_s_flg = 0
 # 慣性項係数
-inerta_coef = 0.68
+inerta_coef = 0.5
 
 # 各種学習中のパラメータを入れる箱
 # learn_data
@@ -85,34 +85,39 @@ def test(learn_data, test_data_set):
 	for data_set in test_data_set:
 		arr = data_set['arr']
 		ans = data_set['ans']
-		result = forward_all(learn_data, arr, is_multi)
-		err = calc_rss(result, ans)/len(ans)
-		data_set['result'] = result
-		err_sum += err
 
-		# fix me
-		# できれば　multi と ２値を統一したい
-		if(len(ans) == 1):
-			pred = 1
-			if(result < 0.5):
-				pred = 0
-			if(pred == ans[0]):
-				success += 1
-			if(ans[0] == 1.0):
-				one_num += 1
-		else:
-			max_index = np.argmax(np.array(result))
-			if(ans[max_index]):
-				success += 1 
-		#print name + " pred: " + str(result) + " ans: " + str(ans) 
-	#thres = calc_optimum_thres(test_data_set)
-	#learn_data['thres'] = thres
-	#print "optimum threthold ="
-	#print thres
+		ret = recog(learn_data, arr, ans, is_multi)
+
+		data_set['result'] = ret['result']
+		err_sum += ret['err']
+		success += ret['success']
+
+		if(is_multi == 0 and ret['ans'][0] == 1.0):
+			one_num +=1
 
 	print str(success) + "/" + str(data_num) 
-	print str(one_num)
+	print "one_num: " + str(one_num)
 	print "errs = " + str(err_sum/ data_num) 
+
+def recog(learn_data, input_data, ans, is_multi = 0):
+	result = forward_all(learn_data, input_data, is_multi)
+	err = calc_rss(result, ans)/len(ans)
+	success = 0
+	# fix me
+	# できれば　multi と ２値を統一したい
+	if(is_multi == 0):
+		pred = 1
+		if(result < 0.5):
+			pred = 0
+		if(pred == ans[0]):
+			success = 1
+		if(ans[0] == 1.0):
+			one_num = 1
+	else:
+		max_index = np.argmax(np.array(result))
+		if(ans[max_index]):
+				success = 1
+	return {"pred":pred, "success":success, "err":err, 'result':result, 'ans':ans} 
 
 def calc_optimum_thres(data_list):
 	err_min = 1.0
@@ -140,26 +145,51 @@ def init_learn_ws(layers, ws, layer_num):
 	layers[layer_num]['W'] = ws
 	layers[layer_num]['ws_delta'] = np.zeros(ws.shape)
 
+# 外部から呼ばれることを想定
+def learn_m(x_data, y_data, class_num = 1, limit_err = 0.02, is_test = 1):
+	global input_data
+	learn_data = {}
+	data_set = []
+	test_data_set = []
+
+	input_data['input_arr_size'] = x_data[0].size
+	for i in xrange(len(x_data)):
+		data = {}
+		data['ans'] = [y_data[i]]
+		data['arr'] = x_data[i]
+		if(is_test == 1 and i > len(x_data) * 0.8):
+			test_data_set.append(data)
+		else:
+			data_set.append(data)
+	start = time.time()
+	
+	learn(learn_data, data_set, limit_err)
+	elapsed_time = time.time() - start
+	print ("elapsed_time:{0}".format(elapsed_time)) + "[sec]"
+
+	test(learn_data, test_data_set)
+
+	return learn_data
+
 # 確率的勾配降下法で学習
 def learn(learn_data, data_set, limit_err = 0.066): #0.066
 	global layer_num, TestDataSet, input_data
 	learn_data['err'] = 0
 	learn_data['layer_num'] = layer_num
-	learn_data['thres'] = 0.7
+	learn_data['thres'] = 0.5
 	layers = []
 	for i in range(layer_num): 
 		layer = {}
 		layers.append(layer)
 
-	hidden_size = 180
+	hidden_size = input_data['input_arr_size']
 	init_learn_ws(layers, np.random.rand(hidden_size, input_data['input_arr_size']+1) - 0.5 , 1) #/(input_data['input_arr_size'] +1)/100.0
+	#init_learn_ws(layers, np.random.rand(hidden_size, hidden_size+1) - 0.5, 2) #/hidden_size/100.0
 	init_learn_ws(layers, np.random.rand(1, hidden_size+1) - 0.5, 2) #/hidden_size/100.0
-	#layers[1]['W'] = np.zeros([hidden_size, input_data['input_arr_size']+1])#/(input_data['input_arr_size'] +1)/100.0
-	#layers[2]['W'] = np.zeros([1, hidden_size+1])#/hidden_size/100.0
+
 	print "init layers"
 	print layers
-	#layers[1]['W'] = np.random.rand(64, 64*64+1)/(64*64+1)/2.0
-	#layers[2]['W'] = np.random.rand(1, 65)/65/2.0
+
 
 	learn_data['layers'] = layers
 	err_sum = limit_err + 1.0
@@ -173,6 +203,7 @@ def learn(learn_data, data_set, limit_err = 0.066): #0.066
 		size = len(data_set)
 		index_list = range(size)
 		random.shuffle(index_list)
+		#index_list = index_list[0:int(size*0.8)]
 		success = 0
 		one_num = 0
 		for index in index_list:
@@ -194,7 +225,7 @@ def learn(learn_data, data_set, limit_err = 0.066): #0.066
 		err_sum = crt_err/len(index_list)
 		print "err = "
 		print err_sum
-		print str(success)+"/" + str(size)
+		print str(success)+"/" + str(len(index_list))
 		print one_num
 
 		if(loop_c > 200):
@@ -209,7 +240,7 @@ def learn(learn_data, data_set, limit_err = 0.066): #0.066
 			test(learn_data ,TestDataSet)
 
 
-	learn_data['thres'] = 0.5 + math.sqrt(max_zero_err) # err 二乗されたものがかえっているためもとに戻す
+	#learn_data['thres'] = 0.5 + math.sqrt(max_zero_err) # err 二乗されたものがかえっているためもとに戻す
 	print "thres = "
 	print learn_data['thres'] 
 
@@ -403,7 +434,14 @@ def max_pooling(img):
 			r_img[x][y] = max(img[x*2][y*2], img[x*2+1][y*2], img[x*2][y*2+1], img[x*2+1][y*2+1]) 
 	return r_img
 
-
+def median_pooling(img):
+	h = img.size/2/img[0].size
+	w = img[0].size/2
+	r_img = np.zeros((h,w))
+	for x in range(h):
+		for y in range(w):
+			r_img[x][y] = np.median(np.array([img[x*2][y*2], img[x*2+1][y*2], img[x*2][y*2+1], img[x*2+1][y*2+1]])) 
+	return r_img
 
 def gaussian_img(img):
 	fil = np.array( [[1.0 , 2.0, 1.0],
@@ -776,5 +814,5 @@ def main():
 	#one_recognition_cifar()
 	return
 
-if __name__ == '__main__':
-	main()
+#if __name__ == '__main__':
+#	main()
