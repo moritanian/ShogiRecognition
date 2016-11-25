@@ -38,16 +38,6 @@ UMA = 13
 RYU = 14
 
 class Masu:
-	snippet_img = None
-	img_arr = None
-	x_pos = 0
-	y_pos = 0
-	koma = 0
-	is_koma = 0 # 駒があるかS
-	snippet_img_pos = [0,0]
-	snippet_img_size = [0,0] # snippet の元サイズ
-	snippet_arr_size = 0
-
 
 	def __init__(self, x, y, s_img = [], _koma = 0, s_img_pos = [0,0]):
 		self.set(x, y, s_img, _koma, s_img_pos)
@@ -59,9 +49,12 @@ class Masu:
 		self.y_pos = y
 		self.snippet_img = s_img
 		self.koma = _koma
+		self.is_koma = not(_koma == 0) # 駒があるか
 		self.snippet_img_pos = s_img_pos
-		self.snippet_img_size = np.array(self.snippet_img).shape
+		self.snippet_img_size = np.array(self.snippet_img).shape # snippet の元サイズ
 
+		self.snippet_arr_size = 0
+		self.snippet_img_arr = None
 
 	def kihu_pos(self):
 		return [9 - y, x + 1]
@@ -86,7 +79,7 @@ class BanMatrix:
 
 	def set_koma(self, x, y , koma):
 		self.masu_data[x][y].koma = koma
-		self.masu_data[x][y].is_koma = 0 if koma == 0 else 1
+		self.masu_data[x][y].is_koma = False if koma == 0 else True
 
 	def get_koma(self, x,y):
 		if(self.valid_masu(x,y) == 0):
@@ -168,7 +161,7 @@ class BanMatrix:
 		for x in xrange(9):
 			for y in xrange(9):
 				koma = self.masu_data[x][y].koma
-				if koma == 0 and self.masu_data[x][y].is_koma == 1:
+				if koma == 0 and self.masu_data[x][y].is_koma == True:
 					koma = 1
 				if(koma < 0):
 					strl += str(int(koma))
@@ -191,7 +184,6 @@ class BanMatrix:
 # 盤面によらない各駒の性質（動きについても管理）
 class Kihu:
 	
-
 	def __init__(self, teban, target, prev_pos, next_pos, revival = 0, promotion = 0):
 		self.__promotion_list = [[HU,KYO,KEI,GIN,KAK,HIS], [TO,NKYO,NKEI,NGIN,UMA,RYU]]
 		
@@ -273,15 +265,16 @@ class Kihu:
 
 		return valid
 
+	# 成ることができるか 既に成りごまの場合false
 	def promotion_validation(self):
 		valid = 0
 		koma = abs(self.target)
 		if(koma in self.__promotion_list[0]):
 			if(self.teban == 1):
-				if(self.prev_pos[0] > 2 and self.next_pos[0] > 2):
+				if(not(self.prev_pos[0] > 2 and self.next_pos[0] > 2)):
 					valid = 1
 			else:
-				if(self.prev_pos[0] < 6 and self.next_pos[0] < 6):
+				if(not(self.prev_pos[0] < 6 and self.next_pos[0] < 6)):
 					valid = 1
 				
 		return valid
@@ -337,15 +330,35 @@ class Kihu:
 		return txt
 
 	# promotion できるならpromoption した値が、できない場合、0が帰る
-	def is_promotion(self, target):
+	def is_promotion(self, target = 0):
+		if target == 0:
+			target = self.target
 		ret = 0
 		target_abs = abs(target)
+		print "target_abs" + str(target_abs)
 		if(target_abs in self.__promotion_list[0]):
 			index = self.__promotion_list[0].index(target_abs)
 			ret = self.__promotion_list[1][index]
 			if target < 0:
 				ret = -ret
 		return ret
+
+	def is_cancel_promotion(self, target = 0):
+		if target == 0:
+			target = self.target
+		ret = 0
+		target_abs = abs(target)
+		if(target_abs in self.__promotion_list[1]):
+			index = self.__promotion_list[1].index(target_abs)
+			ret = self.__promotion_list[0][index]
+			if target < 0:
+				ret = -ret
+		return ret
+
+	def set_promotion(self):
+		
+		self.promotion = 1
+
 
 
 # 一連の局面進行を管理する
@@ -489,13 +502,12 @@ class PlayFlow:
 					dif_list.append([x, y])
 
 		dif_num = len(dif_list)
-		#print "dif_num = " + str(dif_num)
-		#print dif_list
+	
 		if(dif_num == 0):
 			change = 0
 			result = 1
 		elif(dif_num == 1):
-			if(ban2.get_masu(dif_list[0][0], dif_list[0][1]).is_koma == 1): # 駒打ち
+			if(ban2.get_masu(dif_list[0][0], dif_list[0][1]).is_koma ): # 駒打ち
 				if(ban1.capture_num(self.teban) == 0):
 					result = 0
 				else:
@@ -526,7 +538,7 @@ class PlayFlow:
 				# todo どこに移動したのか特定, TODO 成り判定も必要
 				target = ban1.get_koma(dif_list[0][0], dif_list[0][1])
 				movable_cap_list = self.get_movable_list(ban1, dif_list[0], capture = True) # 駒取のある移動地点のリストを取得
-				max_probab = 0.0
+				max_probab = -1.0
 			
 				if(len(movable_cap_list) == 1):
 					result = 1
@@ -535,24 +547,23 @@ class PlayFlow:
 				
 				elif(len(movable_cap_list) > 0):
 					for cap_pos in movable_cap_list:
-						probab = self.get_koma_probability(ban2, cap_pos, target)
+						probab = self.get_koma_probability(ban2, cap_pos, target, is_sengo_only = True) * self.teban # teban かけているのは、後手の場合、後手の駒である確からしさにするため
 						if probab > max_probab:
 							max_probab = probab
 							next_pos = cap_pos
-						kihu = Kihu(self.teban, target, dif_list[0], cap_pos)
-						if kihu.promotion_validation(): # なっている可能性あり
-							prom_koma = kihu.is_promotion(target)
-							probab = self.get_koma_probability(ban2, cap_pos, prom_koma)
-							if probab > max_probab:
-								max_probab = probab
-								next_pos = cap_pos
+					
+					kihu = Kihu(self.teban, target, dif_list[0], next_pos)
+					if kihu.promotion_validation(): # なっている可能性あり
+						prom_koma = kihu.is_promotion(target)
+						is_prom = self.recog_is_promotion(ban2, self.teban, next_pos, target)
+						if is_prom:
+							kihu.set_promotion()	
 
 					result = 1
 					changed = 1
-					kihu = Kihu(self.teban, target, dif_list[0], next_pos)
 
 		elif dif_num == 2: # 移動
-			if ban1.get_masu(dif_list[0][0], dif_list[0][1]).is_koma == 1:
+			if ban1.get_masu(dif_list[0][0], dif_list[0][1]).is_koma :
 				prev_pos = dif_list[0]
 				next_pos = dif_list[1]
 			else:
@@ -560,9 +571,9 @@ class PlayFlow:
 				next_pos = dif_list[0]
 
 			target = ban1.get_koma(prev_pos[0] , prev_pos[1])
-			#print "target = " + str(target)
+			
 			target_next_is_koma = ban2.get_masu(next_pos[0], next_pos[1]).is_koma
-			#print "target next = " + str(target_next_is_koma)
+		
 
 			_pass_check = self.pass_check(ban1, target, prev_pos, next_pos)
 			if _pass_check == 0:
@@ -571,9 +582,13 @@ class PlayFlow:
 			elif target * self.teban < 0:
 				err += "手番が違います"
 
-			elif  target_next_is_koma == 1 : # target がnextで目標地点にいるか いらないかも
+			elif  target_next_is_koma  : # target がnextで目標地点にいるか いらないかも
 				kihu = Kihu(self.teban, target, prev_pos, next_pos)
 				if kihu.validation_check():
+					if kihu.promotion_validation(): # なっている可能性あり
+						if self.recog_is_promotion(ban2, self.teban, next_pos, target):
+							print "prom!"
+							kihu.set_promotion()
 					result = 1
 					changed = 1
 				else:
@@ -658,6 +673,16 @@ class PlayFlow:
 
 		return movable_list + movable_cap_list
 
+	# 識別むつかしそう　常にTrueでもいい？
+	def recog_is_promotion(self, ban_matrix, teban, pos, target):
+		kihu = Kihu(teban, target, [], pos)
+		prom_target = kihu.is_promotion()
+		if prom_target == 0:
+			return False
+		koma_list = [target, prom_target]
+		koma = self.recog_koma_in_list(ban_matrix, pos, koma_list)
+		return koma == koma_list[1]
+
 	# 駒候補の中から識別する 先後は別
 	# 先後判定してからやりたい
 	def recog_koma_in_list(self, ban_matrix, pos, koma_list):
@@ -668,11 +693,58 @@ class PlayFlow:
 		return koma_list[index]
 
 	# 単体識別 指定した駒であるか 確からしさの値を返す
-	def get_koma_probability(self, ban_matrix, pos, koma):
-		return 0
+	def get_koma_probability(self, ban_matrix, pos, koma, is_sengo_only = False):
+		koma_recognition = KomaRecognition(ban_matrix, pos)
+		if is_sengo_only: # 先後のみ判定（先手なら１）
+			prob = koma_recognition.get_sengo_probability()
+		else:
+			prob = koma_recognition.get_probability(koma)
+		print pos
+		print "prob = " + str(prob)
+		return prob
+
+# PlayFlow から分離して駒単体の認識を記述する
+class KomaRecognition:
+	
+	# @class member
+	SengoLearnFile = "sengo_recog.txt"
+	SengoLearnW = None
+	KomaLearnFile = "koma%d_recog.txt"
+	KomaLearnW = []
+	
+	def __init__(self, ban_matrix, pos):
+		
+		self.ban_matrix = ban_matrix
+		self.pos = pos
+		self.taregt = ban_matrix.get_koma(pos[0], pos[1])
+		if KomaRecognition.KomaLearnW == []:
+			for i in range(14): # magic number
+				KomaRecognition.KomaLearnW.append(None)
 
 
+	def get_probability(self, koma):
+		koma_abs = abs(koma)
+		if KomaRecognition.KomaLearnW[koma_abs] == None:
+			f = open(KomaRecognition.KomaLearnFile % (koma_abs))
+			KomaRecognition.KomaLearnW[koma_abs] = pickle.load(f)
+		is_inv = False
+		if koma < 0:
+			isinv = True
 
+		return self.__get_probability(KomaRecognition.KomaLearnW[koma_abs], is_inv)
+
+	def get_sengo_probability(self):
+		if KomaRecognition.SengoLearnW == None:
+			f = open(KomaRecognition.SengoLearnFile)
+			KomaRecognition.SengoLearnW = pickle.load(f)
+		return self.__get_probability(KomaRecognition.SengoLearnW)
+
+	def __get_probability(self, learn_data, is_inv = False):
+		arr = self.ban_matrix.get_masu(self.pos[0], self.pos[1]).snippet_img_arr
+		if is_inv:
+			arr = inverse_img(arr)
+		ret =  DNN.recog(learn_data, arr, [0])
+		return ret['result']
 
 def apply_filter(fil, img):
 	return  ndimage.convolve(img, fil)
@@ -849,14 +921,14 @@ def recog_one_ban(img):
 	for x in xrange(9):
  		for y in xrange(9):
 			index = x*9 + y
-			if ban_matrix.masu_data[x][y].is_koma == 0:
+			if ban_matrix.masu_data[x][y].is_koma == False:
 				continue
 			# 近傍空きマス取得
 			near_list = ban_matrix.get_near_masu(x,y)
 			empty_cnt = 0
 			color_sum  = np.array([0.0,0.0,0.0])
 			for pos in near_list:
-				if(ban_matrix.masu_data[pos[0]][pos[1]].is_koma == 0):
+				if(ban_matrix.masu_data[pos[0]][pos[1]].is_koma == False):
 					cim = np.array(ban_matrix.get_masu_color_img(pos[0], pos[1]))
 					size = ban_matrix.masu_data[pos[0]][pos[1]].snippet_img_size
 					trim = 3
@@ -969,8 +1041,8 @@ def set_masu_from_one_pic(ban_matrix):
 			img = max_pooling(r_img)
 			#if(x==0 and y==0):
 				#Image.fromarray(img).show()
-			masu.img_arr = convert_arr_from_img(img)/255
-			masu.is_koma = is_koma(masu.img_arr)
+			masu.snippet_img_arr = convert_arr_from_img(img)/255
+			masu.is_koma = is_koma(masu.snippet_img_arr)
 			ban_matrix.masu_data[x][y] = masu
 	return 1
 
@@ -1038,8 +1110,8 @@ def is_koma(img_arr):
 	img_arr2 = img_arr2[trim_size:col_ave/2 - trim_size, trim_size:row_ave/2 - trim_size]
 	#print np.mean(img_arr2)
 	if(np.mean(img_arr2) < 0.3):
-		return 0
-	return 1
+		return False
+	return True
 
 def make_data():
 	HU = 1
