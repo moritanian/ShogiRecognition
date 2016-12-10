@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 import numpy as np
 from PIL import Image
 import glob
@@ -12,14 +13,18 @@ from scipy import dot, roll
 
 import chain_recog
 import DNN
+import WWW
+
 import pickle
 
 import threading
 import sys
-
+import datetime
 
 col_ave = 0
 row_ave = 0
+
+URL = "http://localhost/flyby/"
 
 HU = 1
 KYO = 2
@@ -184,7 +189,7 @@ class BanMatrix:
 # 盤面によらない各駒の性質（動きについても管理）
 class Kihu:
 	
-	def __init__(self, teban, target, prev_pos, next_pos, revival = 0, promotion = 0):
+	def __init__(self, teban, epoch, target, prev_pos, next_pos, revival = 0, promotion = 0):
 		self.__promotion_list = [[HU,KYO,KEI,GIN,KAK,HIS], [TO,NKYO,NKEI,NGIN,UMA,RYU]]
 		
 		self.kihu_txt = ""
@@ -195,11 +200,15 @@ class Kihu:
 		self.promotion = 0
 
 		self.teban = teban
+		self.epoch = epoch
 		self.prev_pos = prev_pos
 		self.next_pos = next_pos
 		self.target = target 
 		self.revival = revival
 		self.promotion = promotion
+
+		now = datetime.datetime.now()
+		self.create_time = now.strftime("%Y/%m/%d %H:%M:%S")
 
 	# ここでは単なる動きの確認を行う
 	def validation_check(self):
@@ -279,7 +288,7 @@ class Kihu:
 				
 		return valid
 
-	def get_txt(self):
+	def get_txt(self, utf8 = False):
 		txt = ""
 		if(self.teban == 1):
 			txt += "▲"
@@ -293,8 +302,9 @@ class Kihu:
 			txt += "成"
 
 		txt += "\n"
-
-		return txt.decode('utf-8')
+		if utf8 :
+			return txt.decode('utf-8')
+		return txt
 
 	def get_koma_txt(self, koma):
 		koma = abs(koma)
@@ -359,6 +369,28 @@ class Kihu:
 		
 		self.promotion = 1
 
+	def send_data(self, id):
+		end_point = URL + "api/game/" + str(id) + "/game_record/add"
+		is_promotion_num = 1 if self.promotion else 0
+		
+		if(self.prev_pos == []):
+			position = "99" + str(self.next_pos[0]) + str(self.next_pos[1])
+		else:
+			position = str(self.prev_pos[0]) + str(self.prev_pos[1]) + str(self.next_pos[0]) + str(self.next_pos[1])
+		
+		post_data = {
+			"epoch": self.epoch,
+			"position": position,
+			"target": self.target,
+			"is_promotion": str(is_promotion_num),
+			"revival" : str(self.revival),
+			"kihu" : self.get_txt(),
+			"create_time" : self.create_time 
+		}
+
+		print post_data
+		print WWW.Post(end_point, post_data)
+
 
 
 # 一連の局面進行を管理する
@@ -366,6 +398,7 @@ class PlayFlow:
 	
 
 	def __init__(self):
+
 		self.crt_ban_matrix = None
 		self.epoch = 0 # 手数
 		self.kihus = []
@@ -408,7 +441,20 @@ class PlayFlow:
 			self.crt_ban_matrix.set_koma(6,i, HU)
 
 		self.crt_ban_matrix.print_ban()
-		
+
+		now = datetime.datetime.now()
+		crt_time = now.strftime("%Y/%m/%d %H:%M:%S")
+		end_point = URL + "api/game/0/start" 
+		ret = WWW.Post(end_point, {"start_time": crt_time})
+		if not(ret['result']):
+			print "Send Err !!!!!!"
+			exit()
+
+		self.game_id = ret['game_id']
+		print "game_id = " + str(self.game_id)
+
+
+
 	# スレッドを立てて一定時間ごとにカメラから読む
 	def start_flow(self):
 		self.video_cap = cv2.VideoCapture(0)
@@ -447,12 +493,9 @@ class PlayFlow:
  			#print ret
 			if ret['result'] == 1 and ret['changed'] == 1:
 				# 手を進める
-				self.kihus.append(ret['kihu'])
-				self.epoch += 1
-				self.teban = 1 - (self.epoch % 2) * 2 
-				self.advance(ret['kihu'])
+				self.flow_advance(ret['kihu'])
 				print "epoch: " + str(self.epoch)
-				print ret['kihu'].get_txt()
+				print ret['kihu'].get_txt(utf8 = True)
 				self.crt_ban_matrix.print_ban()
 
 		else:
@@ -484,6 +527,15 @@ class PlayFlow:
 
 			self.crt_ban_matrix.set_koma(kihu.next_pos[0], kihu.next_pos[1], target)
 
+	# game の局面が１つ進んだ
+	def flow_advance(self, kihu):
+		
+		self.kihus.append(kihu)
+		self.advance(kihu)
+		kihu.send_data(self.game_id)
+		self.epoch += 1
+		self.teban = 1 - (self.epoch % 2) * 2 
+
 	# 有無の変化は3種類
 	# 1: +1 （打つ）
 	# 2: +1 -1 (移動)
@@ -514,7 +566,7 @@ class PlayFlow:
 					# todo 画像認識により、打ったコマを決定
 					cap_variety = ban1.capture_variety(self.teban)
 					if(len(cap_variety) == 1):
-						kihu = Kihu(self.teban, cap_variety[0], [], dif_list[0], revival = 1)
+						kihu = Kihu(self.teban, self.epoch + 1, cap_variety[0], [], dif_list[0], revival = 1)
 						result = 1
 						changed = 1
 						# 二歩チェック
@@ -529,7 +581,7 @@ class PlayFlow:
 					elif(len(cap_variety) > 1):
 						# 複数打った駒候補があるときは識別する
 						rec = self.recog_koma_in_list(ban1, cap_variety)
-						kihu = Kihu(self.teban, rec, [], dif_list[0], revival = 1)
+						kihu = Kihu(self.teban, self.epoch + 1, rec, [], dif_list[0], revival = 1)
 						result = 1
 						changed = 1
 					else:
@@ -543,7 +595,7 @@ class PlayFlow:
 				if(len(movable_cap_list) == 1):
 					result = 1
 					changed = 1
-					kihu = Kihu(self.teban, target, dif_list[0], movable_cap_list[0])
+					kihu = Kihu(self.teban, self.epoch + 1, target, dif_list[0], movable_cap_list[0])
 				
 				elif(len(movable_cap_list) > 0):
 					for cap_pos in movable_cap_list:
@@ -552,7 +604,7 @@ class PlayFlow:
 							max_probab = probab
 							next_pos = cap_pos
 					
-					kihu = Kihu(self.teban, target, dif_list[0], next_pos)
+					kihu = Kihu(self.teban, self.epoch + 1, target, dif_list[0], next_pos)
 					if kihu.promotion_validation(): # なっている可能性あり
 						prom_koma = kihu.is_promotion(target)
 						is_prom = self.recog_is_promotion(ban2, self.teban, next_pos, target)
@@ -583,7 +635,7 @@ class PlayFlow:
 				err += "手番が違います"
 
 			elif  target_next_is_koma  : # target がnextで目標地点にいるか いらないかも
-				kihu = Kihu(self.teban, target, prev_pos, next_pos)
+				kihu = Kihu(self.teban, self.epoch + 1, target, prev_pos, next_pos)
 				if kihu.validation_check():
 					if kihu.promotion_validation(): # なっている可能性あり
 						if self.recog_is_promotion(ban2, self.teban, next_pos, target):
@@ -675,7 +727,7 @@ class PlayFlow:
 
 	# 識別むつかしそう　常にTrueでもいい？
 	def recog_is_promotion(self, ban_matrix, teban, pos, target):
-		kihu = Kihu(teban, target, [], pos)
+		kihu = Kihu(teban, self.epoch + 1, target, [], pos)
 		prom_target = kihu.is_promotion()
 		if prom_target == 0:
 			return False
@@ -704,6 +756,7 @@ class PlayFlow:
 		return prob
 
 # PlayFlow から分離して駒単体の認識を記述する
+# Todo 画像処理のうち、駒、盤にかかわるもの（より汎用的なものは別クラスで）はこちらに組み込みたい
 class KomaRecognition:
 	
 	# @class member
