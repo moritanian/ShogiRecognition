@@ -15,6 +15,8 @@ import chain_recog
 import DNN
 import apery_call
 import WWW
+import koma_recognition
+import square_space
 
 import pickle
 
@@ -43,28 +45,6 @@ NGIN = 12
 UMA = 13
 RYU = 14
 
-class Masu:
-
-	def __init__(self, x, y, s_img = [], _koma = 0, s_img_pos = [0,0]):
-		self.set(x, y, s_img, _koma, s_img_pos)
-
-	def set(self,  x, y, s_img = [], _koma = 0, s_img_pos = [0,0]):
-		if(s_img == []):
-			s_img = np.array([])
-		self.x_pos = x
-		self.y_pos = y
-		self.snippet_img = s_img
-		self.koma = _koma
-		self.is_koma = not(_koma == 0) # 駒があるか
-		self.snippet_img_pos = s_img_pos
-		self.snippet_img_size = np.array(self.snippet_img).shape # snippet の元サイズ
-
-		self.snippet_arr_size = 0
-		self.snippet_img_arr = None
-
-	def kihu_pos(self):
-		return [9 - y, x + 1]
-
 # 盤面管理
 # ゲーム上のルールを管理する
 # 認識処理は入らないようにする
@@ -79,7 +59,7 @@ class BanMatrix:
 		for x in range(9):
 			y_dat = []
 			for y in range(9):
-				masu = Masu(x, y)
+				masu = square_space.Masu(x, y)
 				y_dat.append(masu)
 			self.masu_data.append(y_dat)
 
@@ -503,6 +483,8 @@ class PlayFlow:
 		self.game_id = ret['game_id']
 		print "game_id = " + str(self.game_id)
 
+		self.koma_recognition = koma_recognition.KomaRecognition()
+
 
 	# スレッドを立てて一定時間ごとにカメラから読む
 	def start_flow(self):
@@ -535,7 +517,7 @@ class PlayFlow:
 		ban_matrix = BanMatrix(Image.fromarray(img))
 		#self.crt_ban_matrix.print_ban()
 		# 盤面セットに成功したら
-		if set_masu_from_one_pic(ban_matrix):
+		if self.koma_recognition.set_masu_from_one_pic(ban_matrix):
 			#ban_matrix.print_ban(over_write = False)
 
 			# 前の局面と比較
@@ -802,11 +784,11 @@ class PlayFlow:
 
 	# 単体識別 指定した駒であるか 確からしさの値を返す
 	def get_koma_probability(self, ban_matrix, pos, koma, is_sengo_only = False):
-		koma_recognition = KomaRecognition(ban_matrix, pos)
+		koma_recognition = koma_recognition.KomaRecognition()
 		if is_sengo_only: # 先後のみ判定（先手なら１）
-			prob = koma_recognition.get_sengo_probability()
+			prob = koma_recognition.get_sengo_probability(ban_matrix, pos)
 		else:
-			prob = koma_recognition.get_probability(koma)
+			prob = koma_recognition.get_probability(ban_matrix, pos, koma)
 		print pos
 		print "prob = " + str(prob)
 		return prob
@@ -826,255 +808,7 @@ class PlayFlow:
 			kihu.target = self.crt_ban_matrix.get_koma(kihu.prev_pos[0], kihu.prev_pos[1])
 		return kihu
 
-# PlayFlow から分離して駒単体の認識を記述する
-# Todo 画像処理のうち、駒、盤にかかわるもの（より汎用的なものは別クラスで）はこちらに組み込みたい
-class KomaRecognition:
-	
-	# @class member
-	SengoLearnFile = "sengo_recog.txt"
-	SengoLearnW = None
-	KomaLearnFile = "koma%d_recog.txt"
-	KomaLearnW = []
-	
-	def __init__(self, ban_matrix, pos):
-		
-		self.ban_matrix = ban_matrix
-		self.pos = pos
-		self.target = ban_matrix.get_koma(pos[0], pos[1])
-		if KomaRecognition.KomaLearnW == []:
-			for i in range(14): # magic number
-				KomaRecognition.KomaLearnW.append(None)
 
-
-	def get_probability(self, koma):
-		koma_abs = abs(koma)
-		if KomaRecognition.KomaLearnW[koma_abs] == None:
-			f = open(KomaRecognition.KomaLearnFile % (koma_abs))
-			KomaRecognition.KomaLearnW[koma_abs] = pickle.load(f)
-		is_inv = False
-		if koma < 0:
-			isinv = True
-
-		return self.__get_probability(KomaRecognition.KomaLearnW[koma_abs], is_inv)
-
-	def get_sengo_probability(self):
-		if KomaRecognition.SengoLearnW == None:
-			f = open(KomaRecognition.SengoLearnFile)
-			KomaRecognition.SengoLearnW = pickle.load(f)
-		return self.__get_probability(KomaRecognition.SengoLearnW)
-
-	def __get_probability(self, learn_data, is_inv = False):
-		arr = self.ban_matrix.get_masu(self.pos[0], self.pos[1]).snippet_img_arr
-		if is_inv:
-			arr = inverse_img(arr)
-		ret =  DNN.recog(learn_data, arr, [0])
-		return ret['result']
-
-def apply_filter(fil, img):
-	return  ndimage.convolve(img, fil)
-
-def add_line(img, line_list):
-	c_img = copy.copy(img)
-	old = 0
-	for row in line_list[0]: # row
-		c_img[:, row] = 255
-		#print str(row - old)
-		old = row 
-
-	old = 0
-	for col in line_list[1]: # col
-		c_img[col, :] = 255
-		#print str(col - old)
-		old = col
-
-	return c_img
-
-
-def get_line_list(img):
-	line_list = []
-	width = img.shape[1]
-	height = img.shape[0]
-
-	
-	row_sum = np.sum(img, axis = 0)
-	col_sum = np.sum(img, axis = 1)
-
-	row_mean = row_sum.mean()
-	col_mean = col_sum.mean()
-	row_limit = row_mean*1.2
-	col_limit = col_mean*1.2
-
-	row_list = []
-	while (True):
-		row_limit += row_mean * 0.1
-		limit_size = width/20
-		row_list = []
-		for i, row in enumerate(row_sum):
-			if(row > row_limit):
-				if(len(row_list) == 0 or i - row_list[-1] > limit_size): # まだ格納されていないか、距離が離れているときは追加
-					row_list.append(i)
-				elif(row_sum[row_list[-1]] < row): # 自分のほうが大きい場合は上書き
-					row_list[-1] = i
-		if len(row_list) <= 10:
-			break 
-	
-	if len(row_list) < 10:
-		return []
-
-	col_list = []
-	while True:
-		col_limit += col_mean*0.1
-		limit_size = height/20
-		col_list = []
-		for i, col in enumerate(col_sum):
-			if(col > col_limit):
-				if(len(col_list) == 0 or i - col_list[-1] > limit_size): # まだ格納されていないか、距離が離れているときは追加
-					col_list.append(i)
-				elif(col_sum[col_list[-1]] < col): # 自分のほうが大きい場合は上書き
-					col_list[-1] = i
-		#print len(col_list)
-		if len(col_list) <= 10: 
-			break
-
-	if len(col_list) < 10:
-		return []
-
-	if(-col_list[0] + 2*col_list[1] - col_list[2] > 4):
-		col_list[0] = 2*col_list[1] - col_list[2]
-	if(col_list[-1] - 2*col_list[-2] + col_list[-3] > 4):
-		col_list[-1] = 2*col_list[-2] - col_list[-3]
-			
-	line_list.append(row_list)
-	line_list.append(col_list)
-
-	return line_list
-
-# arr に変換
-def convert_arr_from_img(img):
-	size = img.size
-	arr = img.reshape(1,size)
-	arr = arr[0] # 1次元ベクトルに
-	return arr
-
-def max_pooling(img):
-	h = img.size/2/img[0].size
-	w = img[0].size/2
-	r_img = np.zeros((h,w))
-	for x in range(h):
-		for y in range(w):
-			r_img[x][y] = max(img[x*2][y*2], img[x*2+1][y*2], img[x*2][y*2+1], img[x*2+1][y*2+1]) 
-	return  np.uint8(r_img)
-
-def devide_img(img, line_list):
-	global row_ave, col_ave
-	if(len(line_list[0]) != 10):
-		print "err row number in convert_masu_pos" + str(len(line_list[0]))
-		return 
-	if(len(line_list[1]) != 10):
-		print "err col number in convert_masu_pos" + str(len(line_list[1]))
-		return 
-	
-	# 最初と最後のラインは盤の外枠の線にずれる可能性があるので除外
-	if(row_ave ==0 or col_ave == 0):
-		col_ave = (line_list[1][-2] - line_list[1][1])/7
-		row_ave =  (line_list[0][-2] - line_list[0][1])/7
-
-	img_list = []
-	for col in range(9):
-		row_list = []
-		for row in range(9):
-			div_img = copy.copy(img[line_list[1][col]:line_list[1][col] + col_ave, line_list[0][row]: line_list[0][row] + row_ave])
-			row_list.append(div_img)
-
-		img_list.append(row_list)
-
-	return img_list
-
-def inverse_img(img):
-	return  (np.fliplr(img))[::-1]
-
-def ban_init():
-	HU = 1
-	KYO = 2
-	KEI = 3
-	GIN = 4
-	KIN = 5
-	KAK = 6
-	HIS = 7
-	OHO = 8
-
-	ban_data = np.zeros([9,9])
-	ban_data[0][0] = -KYO
-	ban_data[0][1] = -KEI
-	ban_data[0][2] = -GIN
-	ban_data[0][3] = -KIN
-	ban_data[0][4] = -OHO
-	ban_data[0][5] = -KIN
-	ban_data[0][6] = -GIN
-	ban_data[0][7] = -KEI
-	ban_data[0][8] = -KYO
-
-	ban_data[8][0] = KYO
-	ban_data[8][1] = KEI
-	ban_data[8][2] = GIN
-	ban_data[8][3] = KIN
-	ban_data[8][4] = OHO
-	ban_data[8][5] = KIN
-	ban_data[8][6] = GIN
-	ban_data[8][7] = KEI
-	ban_data[8][8] = KYO
-	
-	ban_data[1][1] = - HIS
-	ban_data[1][7] = -KAK
-	ban_data[7][1] = KAK
-	ban_data[7][7] = HIS
-
-	ban_data[2,:] = -HU
-	ban_data[6, :] = HU
-
-	return ban_data
-
-def recog_one_ban(img):
-	
-	# 1,盤のマス認識
-	# 2,有無識別
-	ban_matrix = BanMatrix(img)
-	set_masu_from_one_pic(ban_matrix)
-	#ban_matrix.print_ban()
-	# 2, 先後識別
-	for x in xrange(9):
- 		for y in xrange(9):
-			index = x*9 + y
-			if ban_matrix.masu_data[x][y].is_koma == False:
-				continue
-			# 近傍空きマス取得
-			near_list = ban_matrix.get_near_masu(x,y)
-			empty_cnt = 0
-			color_sum  = np.array([0.0,0.0,0.0])
-			for pos in near_list:
-				if(ban_matrix.masu_data[pos[0]][pos[1]].is_koma == False):
-					cim = np.array(ban_matrix.get_masu_color_img(pos[0], pos[1]))
-					size = ban_matrix.masu_data[pos[0]][pos[1]].snippet_img_size
-					trim = 3
-					cim2 = cim[trim:size[0] - trim, trim: size[1]-trim, :]
-					color_sum += np.array([cim2[:, : ,0].mean(), cim2[:, : ,1].mean(), cim2[:, : ,2].mean()])
-				empty_cnt += 1
-			# 空マスの平均カラー取得
-			if(empty_cnt > 0):
-				color_mean = color_sum/empty_cnt
-				cim = np.array(ban_matrix.get_masu_color_img(x, y))
-				dev_img = np.zeros([cim.shape[0], cim.shape[1]])
-				for x1 in xrange(cim.shape[0]):
-					for y1 in xrange(cim.shape[1]):
-						if(np.linalg.norm(cim[x1][y1] - color_mean) < 100):   
-						 #if(np.linalg.norm(color_HSV(cim[x1][y1])[2] - color_HSV(color_mean)[2]) < 150):      # 100 以下　maxpooling での学習性能は？
-						 	dev_img[x1][y1] = 255
-						
-				if(y == 1 ):
-					Image.fromarray(dev_img).show()	
-					
-					#dev_img = DNN.max_pooling(dev_img)
-					#Image.fromarray(dev_img).show()	 	
 
 def color_HSV(color):
 	max_val = max(color)
@@ -1093,149 +827,8 @@ def color_HSV(color):
 	s = (max_val - min_val)/max_val
 	return np.array([h,s,v])
 
-def print_ban(ban_data):
-	HU = 1
-	KYO = 2
-	KEI = 3
-	GIN = 4
-	KIN = 5
-	KAK = 6
-	HIS = 7
-	OHO = 8
-
-	strl = ""
-	print " 9  8  7  6  5  4  3  2  1 0"
-	print "---------------------------"
-	for y in xrange(9):
-		strl = ""
-		for x in xrange(9):
-			if(ban_data[y][x] < 0):
-				strl += str(int(ban_data[y][x]))
-			elif (ban_data[y][x] > 0):
-				strl += " " + str(int(ban_data[y][x]))
-			else:
-				strl += "  "
-			strl += " "
-		strl += "|" + str(y+1)
-		print strl
-
-def ban_recog(learn_data):
-	ban_data = ban_init()
-	im = Image.open("init_ban6.jpg")
- 	dat = make_data_from_one_pic(im, ban_data)
- 	for x in xrange(9):
- 		for y in xrange(9):
- 			index = x*9 + y
- 			if(is_koma(dat['x_data'][index])):
-	 			
-	 			ret = DNN.recog(learn_data, dat['x_data'][index], [dat['y_data'][index]])
-	 			# 閾値ぎりぎりなのは反転して確かめ
-	 			if(abs(ret['result'] -0.5) < 0.15 ):
-	 				ret2 = DNN.recog(learn_data, dat['x_data'][index][::-1], [dat['y_data'][index]])
-	 				ret['pred'] = 1 if ret['result'] - ret2['result'] > 0.0 else  0 
-	 				#if(abs(ret['result'] -0.5) < abs(ret2['result'] -0.5)):
-	 				#	ret['pred'] = 1 - ret2['pred']
-	 			ban_data[x][y] = ret['pred']
-	 			if(ban_data[x][y]  == 0):
-	 				ban_data[x][y] = -1
-	 		else:
-	 			ban_data[x][y] = 0
- 	#print_ban(ban_data)
-	return
-
-def set_masu_from_one_pic(ban_matrix):
-	img = ban_matrix.img
-	im = np.array(img.convert('L'))
-	frame = cv2.Canny(im,80,180) # 10 170
-	#frame = cv2.convertScaleAbs(cv2.Laplacian(im, cv2.CV_32F, 8))
-
-	im2 = np.array(frame)
-	#Image.fromarray(im2).show()
-	line_list = get_line_list(im2)
-	if line_list == []:
-		return 0
-	img_list = devide_img(im2, line_list)
-	#Image.fromarray(add_line(im2, line_list)).show()
-
-	for x in range(9):
-		for y in range(9):
-			s_img_pos = [line_list[1][x], line_list[0][y]]
-			r_img = img_list[x][y]
-			masu = Masu(x, y , r_img, 0, s_img_pos)
-			img = max_pooling(r_img)
-			#if(x==0 and y==0):
-				#Image.fromarray(img).show()
-			masu.snippet_img_arr = convert_arr_from_img(img)/255
-			masu.is_koma = is_koma(masu.snippet_img_arr)
-			ban_matrix.masu_data[x][y] = masu
-	return 1
 
 
-
-# ban_data : 教師データ
-# learn_masu : 学習対象マス
-# learn_koma : 学習する駒
-def make_data_from_one_pic(img, ban_data = [], learn_masu = [], learn_koma = 0):
-	if(ban_data == []):
-		ban_data = np.zeros([9,9])
-
-	if(learn_masu == []):
-		for i in range(9):
-			for j in range(9):
-				learn_masu.append([i,j])
-
-	im = np.array(img.convert('L'))
-	frame = cv2.Canny(im,80,180)
-	#frame = cv2.convertScaleAbs(cv2.Laplacian(im, cv2.CV_32F, 8))
-
-	im2 = np.array(frame)
-	#Image.fromarray(im2).show()
-	line_list = get_line_list(im2)
-	img_list = devide_img(im2, line_list)
-	
-	x_data = []
-	y_data = []
-	raw_img = []
-	for masu in learn_masu:
-		col = masu[0]
-		row = masu[1]
-		koma = ban_data[col][row]
-		if(koma < 0):
-			r_img = inverse_img(img_list[col][row])
-		else:
-			r_img = img_list[col][row]
-
-		img = max_pooling(r_img)
-		x_data.append(convert_arr_from_img(img)/255)
-		raw_img.append(r_img)
-		y =int(abs(koma))
-		if(learn_koma > 0):
-			if(y==learn_koma):
-				y=1
-			else:
-				y=0
-		elif(learn_koma == -1):
-			if(y!=0):
-				y=1
-			else:
-				y = 0
-		elif(learn_koma == -2):
-			if(koma < 0):
-				y = 0
-			else:
-				y = 1
-		y_data.append(y)	
-	return {'x_data': x_data, 'y_data': y_data, 'raw_img': raw_img}
-
-def is_koma(img_arr):
-	global col_ave, row_ave
-	trim_size = 4
-	img_arr2 = copy.copy(img_arr.reshape([col_ave/2, row_ave/2]))
-	img_arr2 = img_arr2[trim_size:col_ave/2 - trim_size, trim_size:row_ave/2 - trim_size]
-	#print np.mean(img_arr2)
-	if(np.mean(img_arr2) < 0.3):
-		return False
-	return True
 
 def make_data():
 	HU = 1
