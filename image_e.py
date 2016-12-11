@@ -13,6 +13,7 @@ from scipy import dot, roll
 
 import chain_recog
 import DNN
+import apery_call
 import WWW
 
 import pickle
@@ -189,7 +190,11 @@ class BanMatrix:
 # 盤面によらない各駒の性質（動きについても管理）
 class Kihu:
 	
-	def __init__(self, teban, epoch, target, prev_pos, next_pos, revival = 0, promotion = 0):
+	# @static member
+	__usi_targets_first = ['P', 'L', 'N', 'S', 'G', 'B', 'R', 'K', '+P', '+L', '+N', '+S', '+B', '+R']
+	__usi_targets_second = ['p', 'l', 'n', 's', 'g', 'b', 'r', 'k', '+p', '+l', '+n', '+s', '+b', '+r']
+
+	def __init__(self, teban = 0, epoch=0, target=0, prev_pos=[], next_pos=[], revival = 0, promotion = 0):
 		self.__promotion_list = [[HU,KYO,KEI,GIN,KAK,HIS], [TO,NKYO,NKEI,NGIN,UMA,RYU]]
 		
 		self.kihu_txt = ""
@@ -306,6 +311,47 @@ class Kihu:
 			return txt.decode('utf-8')
 		return txt
 
+	def get_usi(self): #usi形式で取得
+		if(self.revival):
+			usi_t = self.__usi_targets_first[abs(self.target) - 1]
+			usi = usi_t + "*" + self.__usi_pos(self.next_pos)
+		else:
+			usi = self.__usi_pos(self.prev_pos) + self.__usi_pos(self.next_pos)
+			if(self.promotion != 0):
+				usi += "+"
+		return usi
+
+	def set_from_usi(self, usi):
+		if(usi[0].isdigit()): # 移動
+			self.prev_pos = self.__pos_from_usi(usi[0:2])
+			self.next_pos = self.__pos_from_usi(usi[2:4])
+			if(len(usi) == 5 and usi[4] == "+"):
+				self.promotion = 1
+
+		else: # 駒うち 
+			if(usi[1] != '*'):
+				sys.stderr.write('input usi was invalid. revival err')
+				exit()
+			self.next_pos = self.__pos_from_usi(usi[2:4])
+			usi_t = usi[0]
+			if(usi_t in self.__usi_targets_first):
+				self.target = (self.__usi_targets_first.index(usi_t) + 1) * self.teban
+				print "set from usi tartget"
+				print self.target
+			else:
+				sys.stderr.write('input usi was invalid. target err')
+				exit()
+			self.revival = 1
+		return self
+
+	def __usi_pos(self, pos):
+		return str(9-pos[1]) + chr(97 + pos[0])
+
+	def __pos_from_usi(self, usi):
+		print usi
+		return [ord(usi[1]) - 97 , 9 - int(usi[0]) ]
+
+
 	def get_koma_txt(self, koma):
 		koma = abs(koma)
 		txt = ""
@@ -399,6 +445,9 @@ class PlayFlow:
 
 	def __init__(self):
 
+		self.is_apery_assist = False
+
+
 		self.crt_ban_matrix = None
 		self.epoch = 0 # 手数
 		self.kihus = []
@@ -436,6 +485,7 @@ class PlayFlow:
 		self.crt_ban_matrix.set_koma(7,1, KAK)
 		self.crt_ban_matrix.set_koma(7,7, HIS)
 
+
 		for i in range(9):
 			self.crt_ban_matrix.set_koma(2,i, -HU)
 			self.crt_ban_matrix.set_koma(6,i, HU)
@@ -454,7 +504,6 @@ class PlayFlow:
 		print "game_id = " + str(self.game_id)
 
 
-
 	# スレッドを立てて一定時間ごとにカメラから読む
 	def start_flow(self):
 		self.video_cap = cv2.VideoCapture(0)
@@ -468,8 +517,11 @@ class PlayFlow:
 		# キャプチャの後始末と，ウィンドウをすべて消す
 		self.video_cap.release()
 		cv2.destroyAllWindows()
+		# apery
+		if self.is_apery_assist:
+			self.apery.end_proc()
 
-	# 最新画像を取り込んで処理
+	# 最新画像を取り込んで処理 スレッドとして動作
 	def exec_new_image(self):
 		if self.start_flg == 0:
 			return 
@@ -533,6 +585,10 @@ class PlayFlow:
 		self.kihus.append(kihu)
 		self.advance(kihu)
 		kihu.send_data(self.game_id)
+		if(self.is_apery_assist):
+			print "flow advance move_board"
+			self.apery.move_board(kihu.get_usi())
+
 		self.epoch += 1
 		self.teban = 1 - (self.epoch % 2) * 2 
 
@@ -755,6 +811,21 @@ class PlayFlow:
 		print "prob = " + str(prob)
 		return prob
 
+	def apery_assist(self, apery):
+		self.apery = apery
+		self.is_apery_assist = True
+		# 既に進んでいる場合、局面をaperyオブジェクトに渡す
+		for kihu in self.kihus:
+			self.apery.move_board(kihu.get_usi())
+
+	def get_apery_ans(self):
+		ans = self.apery.get_answer()
+		kihu = Kihu(teban = self.teban).set_from_usi(ans[0])
+		# usiでの棋譜データは移動の場合、targetを明記していないため、局面から取得する
+		if(kihu.revival == 0):
+			kihu.target = self.crt_ban_matrix.get_koma(kihu.prev_pos[0], kihu.prev_pos[1])
+		return kihu
+
 # PlayFlow から分離して駒単体の認識を記述する
 # Todo 画像処理のうち、駒、盤にかかわるもの（より汎用的なものは別クラスで）はこちらに組み込みたい
 class KomaRecognition:
@@ -769,7 +840,7 @@ class KomaRecognition:
 		
 		self.ban_matrix = ban_matrix
 		self.pos = pos
-		self.taregt = ban_matrix.get_koma(pos[0], pos[1])
+		self.target = ban_matrix.get_koma(pos[0], pos[1])
 		if KomaRecognition.KomaLearnW == []:
 			for i in range(14): # magic number
 				KomaRecognition.KomaLearnW.append(None)
@@ -1280,19 +1351,40 @@ def test():
 #im = Image.open("init_ban1.jpg")
 #recog_one_ban(im)
 
+def main():
+	apery = None
+	flow = PlayFlow()
+	flow.start_flow()
+	while(True):
+		# キーボード入力
+		key = cv2.waitKey(1) & 0xFF
 
-flow = PlayFlow()
-flow.start_flow()
-while(True):
-	# キーボード入力
-	key = cv2.waitKey(1) & 0xFF
+		if key == 27 or key == ord('q'): # esc
+			flow.end_flow()
+			break
+		elif key == ord("a"):
+			if(apery == None):
+				print "start apery assist"
+				apery = apery_call.AperyCall()
+				flow.apery_assist(apery)
 
-	if key == 27 or key == ord('q'): # esc
-		flow.end_flow()
-		break
+		elif key == ord("s"):
+			if(apery == None):
+				apery = apery_call.AperyCall()
+				flow.apery_assist(apery)
+
+			print "ask apery"
+			ans = flow.get_apery_ans().get_txt(utf8 = True)
+			print "apery tell you"
+			print ans
 
 
-print "successfully ended"
+
+	print "successfully ended"
+
+if __name__ == '__main__':
+	main()
+
 
 
 
