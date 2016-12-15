@@ -1,0 +1,374 @@
+<html>
+<head>
+<title>ControlPanel</title>
+
+<script type="text/javascript" src="jquery-3.1.0.min.js"></script>
+<link href="jsonp.css" rel="stylesheet" />
+
+<script type="text/javascript">
+  function callback(json) {
+    console.log(json);
+    $("#result").html("答えは "+json.answer);
+  }
+
+  function get_status_callback(json){
+    console.log(json);
+    update_status(json);
+  }
+   
+  function send() {
+    var s = document.createElement('script');
+    a = document.form1.a.value;
+    b = document.form1.b.value;
+    param = "?a="+a+"&b="+b
+    s.src = '/cgi-bin/jsonp.py'+param;
+    document.body.appendChild(s);
+    return false;
+  }
+
+  function send_panel(node_id){
+    var url =  "/cgi-bin/panel.py?node_id=" + node_id;
+    $.ajax({
+        url: url,
+        dataType: "jsonp"
+    });
+    console.log(url);
+  }
+
+// サーバから状態の情報を定期的に取得
+function get_status(){
+      var url =  '/cgi-bin/panel.py?get_status=1';
+    $.ajax({
+        url: url,
+        dataType: "jsonp"
+    });
+    console.log(url);
+}
+
+ 
+$(function(){
+console.log("start");
+    var node = $(".node");
+    var node_id = 0;
+    var map_parent = $(".node-map");
+
+    function init_nodes(node_list){
+        for(var i=0; i<node_list.length; i++){
+            create_node(node_list[i].type, node_list[i].name, node_list[i].pos);
+        }
+    }
+
+    function create_node(node_type, txt, pos){
+        var c_node = node.clone(true);
+        node_id += 1;
+        c_node.addClass(node_type);
+        c_node.attr("id", "node" + node_id);
+        c_node.attr("node_id", node_id);
+        map_parent.append(c_node);
+        c_node.children().text(txt);
+        c_node.css("top", pos[1]).css("left", pos[0]);
+    }
+
+    // 二点間直線
+    function draw_line(start, goal){
+        var line = $("<div class='line'></div>");
+        redraw_line(start, goal, line);
+        map_parent.append(line);
+        return line;
+    }
+
+    function redraw_line(start, goal, line){
+        var d_x = goal[0] - start[0];
+        var d_y = goal[1] - start[1];
+        var len = Math.sqrt(d_x　* d_x + d_y * d_y);   
+        if(d_x == 0){
+            d_x = 0.1;
+        }
+        line.css("width", len);
+        var deg = Math.atan(d_y/d_x) * 180.0 / Math.PI;
+        //deg = 0;
+        line.css("transform", "rotate(" + deg + "deg)");
+        line.css("top", start[1] + d_y/2 + "px");
+        line.css("left", start[0] + d_x/2 - len/2.0 + "px");
+    }
+
+    function update_connects(con_list){
+        for(var i=0; i< con_list.length; i++){
+            redraw_connect(con_list[i]);
+        }
+    }
+
+    function init_connects(con_list){
+        for(var i=0; i< con_list.length; i++){
+            con_list[i]['id'] = i+1;
+            draw_connect(con_list[i]);
+        }
+    }
+
+    function draw_connect(con){
+        var line = draw_line([0,0], [1,1]);
+        line.attr("id", "line" + con.id);
+        redraw_connect(con);
+    }
+
+    function redraw_connect(con){
+        var start_node = $("#node" + con.nodes[0]);
+        var goal_node = $("#node" + con.nodes[1]);
+        var start = [$(start_node).position().left + $(start_node).width()/2.0, $(start_node).position().top + $(start_node).height()/2.0];
+        var goal = [$(goal_node).position().left + $(goal_node).width()/2.0, $(goal_node).position().top + $(goal_node).height()/2.0];
+
+        var line = $("#line" + con.id);
+        redraw_line(start, goal, line);
+    }
+
+    function toggle_node(node){
+      
+        var node_id = $(node).attr("node_id");
+
+        send_panel(node_id);
+        set_toggle_node(node, !node_list[node_id - 1].is_active);
+      
+    }
+
+    function set_toggle_node(node, is_active){
+        
+        var blk_out = "black-out";
+        var node_id = $(node).attr("node_id");
+          if(is_active){
+            $(node).removeClass(blk_out);
+        }else{
+            $(node).addClass(blk_out);
+        } 
+        node_list[node_id - 1].is_active = is_active;
+        $(".node-status").text( node_list[node_id - 1].is_active );
+
+        // 接続しているlineも対応
+        var connects = find_connect_by_node_id(node_id);
+        for(var i=0; i<connects.length; i++){
+            var con_id = connects[i].id;
+            var another_node_id = connects[i].nodes[0];
+            if(another_node_id == node_id){
+                another_node_id = connects[i].nodes[1];
+            }
+            if( node_list[node_id - 1].is_active){
+                //相手がoffの時、lineもoffのまま
+                if(node_list[another_node_id - 1].is_active){
+                    $("#line" + con_id).removeClass(blk_out);
+                }
+            }else{
+                $("#line" + con_id).addClass(blk_out);
+            }
+        }
+    }
+
+    function find_connect_by_node_id(node_id){
+        var connects = [];
+        for(var i=0; i<connect_list.length; i++){
+            if(connect_list[i].nodes[0] == node_id || connect_list[i].nodes[1] == node_id ){
+                connects.push(connect_list[i]);
+            }
+        }
+        return connects;
+    }
+
+    function renown_node_detail(node_id){
+        $(".node-detail .node-name").text(node_list[node_id - 1].name);
+        $(".node-status").text( node_list[node_id - 1].is_active );
+        shadow_anim($(".node-detail"));
+
+    }
+
+    function shadow_anim(element, end_params, time = 1000){
+        $(element).addClass("node-detail-init");
+        setTimeout(function(){$(element).removeClass("node-detail-init");}, 100);
+    }
+
+    update_status = function(data){
+        for (var i=0; i<data.length; i++){
+            var node_id = data[i].node_id;
+            set_toggle_node($("#node" + node_id), data[i].status == 1);
+        } 
+    }
+
+
+
+    var node_list = [
+        {type: "client", name: "webGL", pos: [487,516], is_active: true},
+        {type: "server", name: "server", pos: [523,213], is_active: true},
+        {type: "local", name: "image recognition", pos: [300, 227], is_active: true}, //3
+        {type: "main-node", name: "main", pos: [260 ,338], is_active: true},
+        {type: "local", name: "camera input", pos: [210, 440], is_active: true},//5
+        {type: "local", name: "control panel", pos: [212,139], is_active: true},
+        {type: "local", name: "bluetooth master", pos: [61, 396], is_active: true},
+        {type: "local", name: "apery thread", pos: [69, 266], is_active: true}, //8
+        {type: "local", name: "CGIHttpServer", pos: [174, 221], is_active: true},
+        {type: "real-world", name: "webcam", pos: [219, 554], is_active: true},//10
+        {type: "client", name: "bluetooth", pos: [73, 562], is_active: true},
+        {type: "local", name: "DNN", pos: [323, 130], is_active: false}
+    ];
+    init_nodes(node_list);
+
+    var connect_list = [
+        {nodes: [1,2]} , 
+        {nodes: [2,4]},
+        {nodes: [3,4]},
+        {nodes: [4,5]},
+        {nodes: [6,9]},
+        {nodes: [4,7]},
+        {nodes: [7,11]},
+        {nodes: [4,8]},
+        {nodes: [4,9]},
+        {nodes: [3,12]},
+        {nodes: [5,10]}
+        ];
+    init_connects(connect_list);
+
+    // double click
+    $(".node").dblclick(function(){
+        toggle_node(this);
+
+    });
+
+    // 定期的に状態取得
+    get_status();
+    setInterval(get_status, 5000);
+   
+    //要素の取得
+    var elements = document.getElementsByClassName("node");
+
+    //要素内のクリックされた位置を取得するグローバル（のような）変数
+    var x;
+    var y;
+
+    //マウスが要素内で押されたとき、又はタッチされたとき発火
+    for(var i = 0; i < elements.length; i++) {
+        elements[i].addEventListener("mousedown", mdown, false);
+        elements[i].addEventListener("touchstart", mdown, false);
+    }
+
+    //マウスが押された際の関数
+    function mdown(e) {
+        //クラス名に .drag を追加
+        //this.classList.add("drag");
+        $(this).addClass("drag");
+
+        var node_id = $(this).attr("node_id");
+        renown_node_detail(node_id);
+
+        //タッチデイベントとマウスのイベントの差異を吸収
+        if(e.type === "mousedown") {
+            var event = e;
+        } else {
+            var event = e.changedTouches[0];
+        }
+
+        //要素内の相対座標を取得
+        x = event.pageX - this.offsetLeft;
+        y = event.pageY - this.offsetTop;
+
+        //ムーブイベントにコールバック
+        //document.body.addEventListener("mousemove", mmove, false);
+        //document.body.addEventListener("touchmove", mmove, false);
+        $(map_parent).mousemove(mmove);
+        $(map_parent).bind("touchmove", mmove);
+    }
+
+    //マウスカーソルが動いたときに発火
+    function mmove(e) {
+
+        //ドラッグしている要素を取得
+        //var drag = document.getElementsByClassName("drag")[0];
+        var drag = $(".drag");
+
+        //同様にマウスとタッチの差異を吸収
+        if(e.type === "mousemove") {
+            var event = e;
+        } else {
+            var event = e.changedTouches[0];
+        }
+
+        //フリックしたときに画面を動かさないようにデフォルト動作を抑制
+        e.preventDefault();
+
+        //マウスが動いた場所に要素を動かす
+        //drag.style.top = event.pageY - y + "px";
+        //drag.style.left = event.pageX - x + "px";
+        $(drag).css("top", event.pageY - y + "px");
+        $(drag).css("left", event.pageX - x + "px");
+
+
+        //line
+        //console.log(drag.id);
+        update_connects(connect_list);
+
+
+        //マウスボタンが離されたとき、またはカーソルが外れたとき発火
+       // drag.addEventListener("mouseup", mup, false);
+        $(drag).mouseup(mup);
+        //document.body.addEventListener("mouseleave", mup, false);
+        $(map_parent).bind("mouseleave", mup);
+        //drag.addEventListener("touchend", mup, false);
+        $(drag).bind("touchend", mup);
+        //document.body.addEventListener("touchleave", mup, false); 
+        $(map_parent).bind("touchleave", mup);
+    }
+
+    //マウスボタンが上がったら発火
+    function mup(e) {
+        //var drag = document.getElementsByClassName("drag")[0];
+        var drag = $(".drag");
+
+        //ムーブベントハンドラの消去
+        //document.body.removeEventListener("mousemove", mmove, false);
+        $(map_parent).unbind("mousemove", mmove);
+
+        //drag.removeEventListener("mouseup", mup, false);
+        $(drag).unbind("mouseup", mup);
+
+        //document.body.removeEventListener("touchmove", mmove, false);
+        $(map_parent).unbind("touchmove", mmove);
+
+        //drag.removeEventListener("touchend", mup, false);
+        $(drag).unbind("touchend", mup);
+
+        //クラス名 .drag も消す
+        //drag.classList.remove("drag");
+        $(drag).removeClass("drag");
+    }
+});
+ 
+</script>
+</head>
+<body>
+<div class="node ellipse" id="ori-node" style="top: 20px;"><div class="node-title flexiblebox">server</div></div>
+
+<form name="form1" onsubmit="return send()">
+  <input type="text" name="a" value="1"> + 
+  <input type="text" name="b" value="2">
+  <input type="submit" value="計算" />
+</form>
+<div id="result">計算結果</div>
+
+<div class="node-container">
+  <div class="node-map">
+    
+    <!--<div class="node ellipse client"><div class="node-title">webGL</div></div>
+    <div class="node ellipse local"><div class="node-title">main</div></div>
+    <div class="node ellipse local"><div class="node-title">camera input</div></div>
+    <div class="node ellipse local"><div class="node-title">bluetooth</div></div>
+    <div class="node ellipse local"><div class="node-title">apery</div></div>
+    <div class="node ellipse real-world"><div class="node-title">webcam</div></div>
+    <div class="node ellipse real-world"><div class="node-title">sensor</div></div>-->
+
+
+  </div>
+  <div class="node-detail">
+    <table>
+        <tr><td>node: </td><td><div class="node-name"></div></td></tr>
+        <tr><td>status</td><td><div class="node-status"></div></td></tr>
+        <tr><td>explain</td><td><div class="explain"></div></div>
+    </table>
+  </div>
+</div>
+</body>
+</html>

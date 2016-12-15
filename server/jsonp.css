@@ -1,0 +1,107 @@
+.node-map {
+	height: 800px;
+    background-color: #202125;
+    width: 60%;
+    float: left;
+}
+
+.ellipse{
+	border-radius: 80px 80px 80px 80px / 40px 40px 40px 40px;
+	width:80px; 
+	height:40px; 
+	background-color:#2c5af4; 
+	#border:solid 20px #7fcfe2; 
+}
+
+.main-node {
+	background-color: #f09600;
+}
+
+.server{
+	background-color: #06901b;
+}
+
+.client{
+	background-color: #d0a033;
+}
+
+.black-out{
+	opacity: 0.3;
+}
+
+.real-world{
+	background-color: #d85599;
+}
+
+.node-title{
+	font-size: 16px;
+	text-align: center;
+	#padding-top: 10px;
+	color: white;
+	height: inherit;
+	text-shadow: 2px 2px 1px #202020;
+
+	-ms-user-select: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.node{
+	cursor: move;
+    position: absolute;
+    z-index: 1000;
+    box-shadow: 10px 10px;
+}
+
+.drag {
+    z-index: 1001;
+}
+
+.line {
+	width: 100px;
+	height: 3px;
+	position: absolute;
+	background-color: #d0d0d0;
+
+	-webkit-transform:rotate(30deg);
+	-moz-transform:rotate(30deg);
+	-o-transform:rotate(30deg);
+	-ms-transform:rotate(30deg);
+	transform:rotate(30deg);
+}
+
+#ori-node{
+	display: none;
+}
+
+.flexiblebox {
+ display: -webkit-flex;
+ display: flex;
+ -webkit-align-items: center; /* 縦方向中央揃え（Safari用） */
+ align-items: center; /* 縦方向中央揃え */
+ -webkit-justify-content: center; /* 横方向中央揃え（Safari用） */
+ justify-content: center; /* 横方向中央揃え */
+}
+
+.node-detail {
+	margin-left: 5px;
+	padding: 10px;
+    background-color: #f3e2e6;
+    display: inline-block;
+    width: 200px;
+    box-shadow: 10px 10px 10px rgba(103, 69, 69, 0.4);
+    text-shadow: 2px 2px 9px #dc9595;
+
+}
+
+.node-detail-init{
+	background-color: #ffffff;
+	box-shadow: 0px 0px 0px rgba(103, 69, 69, 0.4);
+	transition: color 0.3s, background-color 0.8s, box-shadow 0.8s, transform 0.3s;
+  	-webkit-transition: color 0.3s, background-color 0.3s, box-shadow 0.3s, -webkit-transform 0.3s;
+}
+
+.node-detail table{
+	font-size: 18px;
+	font-weight: bold;
+}
