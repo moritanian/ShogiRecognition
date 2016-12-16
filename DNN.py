@@ -23,6 +23,8 @@ img_s_flg = 0
 # 慣性項係数
 inerta_coef = 0.5
 
+drop_rate = 0.5
+
 # 各種学習中のパラメータを入れる箱
 # learn_data
 # {
@@ -91,6 +93,8 @@ def test(learn_data, test_data_set):
 		data_set['result'] = ret['result']
 		err_sum += ret['err']
 		success += ret['success']
+		if(success == 0):
+			print str(ret['result']) + " : " + str(ans)
 
 		if(is_multi == 0 and ret['ans'][0] == 1.0):
 			one_num +=1
@@ -113,10 +117,13 @@ def recog(learn_data, input_data, ans, is_multi = 0):
 			success = 1
 		if(ans[0] == 1.0):
 			one_num = 1
+		print str(result) + " : " + str(ans[0])
+
 	else:
 		max_index = np.argmax(np.array(result))
 		if(ans[max_index]):
 				success = 1
+
 	return {"pred":pred, "success":success, "err":err, 'result':result, 'ans':ans} 
 
 def calc_optimum_thres(data_list):
@@ -170,6 +177,31 @@ def learn_m(x_data, y_data, class_num = 1, limit_err = 0.02, is_test = 1):
 	test(learn_data, test_data_set)
 
 	return learn_data
+
+# 外部から呼ばれる想定 バッチ学習　
+def batch_learn(learn_data, x_data, y_data):
+	global layer_num
+	if(learn_data == None): # はじめてよばれたとき、初期化する
+		i_learn_data = {}
+		i_learn_data['err'] = 0
+		i_learn_data['layer_num'] = layer_num
+		i_learn_data['thres'] = 0.5
+		layers = []
+		for i in range(layer_num): 
+			layer = {}
+			layers.append(layer)
+
+		i_learn_data['input_arr_size'] = x_data.size
+		hidden_size = i_learn_data['input_arr_size']
+		init_learn_ws(layers, np.random.rand(hidden_size, i_learn_data['input_arr_size']+1) - 0.5 , 1) #/(input_data['input_arr_size'] +1)/100.0
+		init_learn_ws(layers, np.random.rand(1, hidden_size+1) - 0.5, 2) #/hidden_size/100.0
+
+		i_learn_data['layers'] = layers
+		learn_data = i_learn_data
+
+	err = learn_one(learn_data ,{"arr": x_data, "ans": [y_data]})
+	#return {"err": err, "learn_data" : learn_data}
+	return (err, learn_data)
 
 # 確率的勾配降下法で学習
 def learn(learn_data, data_set, limit_err = 0.066): #0.066
@@ -441,6 +473,15 @@ def median_pooling(img):
 	for x in range(h):
 		for y in range(w):
 			r_img[x][y] = np.median(np.array([img[x*2][y*2], img[x*2+1][y*2], img[x*2][y*2+1], img[x*2+1][y*2+1]])) 
+	return r_img
+
+def min_pooling(img):
+	h = img.size/2/img[0].size
+	w = img[0].size/2
+	r_img = np.zeros((h,w))
+	for x in range(h):
+		for y in range(w):
+			r_img[x][y] = min(img[x*2][y*2], img[x*2+1][y*2], img[x*2][y*2+1], img[x*2+1][y*2+1]) 
 	return r_img
 
 def gaussian_img(img):

@@ -23,9 +23,9 @@ import pickle
 import threading
 import sys
 import datetime
+import time
 
-col_ave = 0
-row_ave = 0
+from server import main_sock 
 
 URL = "http://localhost/flyby/"
 
@@ -50,7 +50,9 @@ RYU = 14
 # 認識処理は入らないようにする
 class BanMatrix:
 
-	def __init__(self, img = np.array([])):
+	def __init__(self, img = np.array([]), log_obj = None):
+
+		self.log_obj = log_obj
 
 		self.img = img
 		self.__capture = [[],[]] # 持ち駒 # capture[0] 先手 駒一つにつきpushする
@@ -71,6 +73,12 @@ class BanMatrix:
 		if(self.valid_masu(x,y) == 0):
 			return None
 		return self.masu_data[x][y].koma
+
+	def get_snippet_img(self, x, y):
+		if(self.valid_masu(x,y) == 0):
+			return None
+		return self.masu_data[x][y].snippet_img
+
 
 	# 持っている駒数 koma ==0 ですべての種類
 	def capture_num(self, teban, koma = 0):
@@ -161,8 +169,8 @@ class BanMatrix:
 			sys.stdout.write("\033[11\r%s" % strl)
 			sys.stdout.flush()
 		else:
-			print strl
-
+			#print strl
+			self.log_obj.log(strl)
 
 
 # 棋譜
@@ -423,8 +431,9 @@ class Kihu:
 class PlayFlow:
 	
 
-	def __init__(self):
+	def __init__(self, log_obj = None):
 
+		self.log_obj = log_obj
 		self.is_apery_assist = False
 
 
@@ -435,10 +444,10 @@ class PlayFlow:
 		self.cap_thread = None
 		self.start_flg = 0
 		self.epoch = 0
-		self.crt_ban_matrix = BanMatrix()
+		self.crt_ban_matrix = BanMatrix(log_obj = self.log_obj)
 		self.teban = 1
 
-		self.thred_time = 0.3
+		self.thred_time = 0.1
 
 		self.crt_ban_matrix.set_koma(0,0, -KYO)
 		self.crt_ban_matrix.set_koma(0,1, -KEI)
@@ -483,7 +492,9 @@ class PlayFlow:
 		self.game_id = ret['game_id']
 		print "game_id = " + str(self.game_id)
 
-		self.koma_recognition = koma_recognition.KomaRecognition()
+		self.koma_recognition = koma_recognition.KomaRecognition(is_learning = False,  log_obj = self.log_obj.copy_obj(12))
+
+		self.is_learn = False # 機械学習するか
 
 
 	# スレッドを立てて一定時間ごとにカメラから読む
@@ -505,6 +516,8 @@ class PlayFlow:
 
 	# 最新画像を取り込んで処理 スレッドとして動作
 	def exec_new_image(self):
+		#self.start_time = time.time()
+	
 		if self.start_flg == 0:
 			return 
 		ret ,img = self.video_cap.read()
@@ -514,7 +527,7 @@ class PlayFlow:
 		# 1,盤のマス認識
 		# 2,有無識別
 
-		ban_matrix = BanMatrix(Image.fromarray(img))
+		ban_matrix = BanMatrix(Image.fromarray(img), log_obj = self.log_obj)
 		#self.crt_ban_matrix.print_ban()
 		# 盤面セットに成功したら
 		if self.koma_recognition.set_masu_from_one_pic(ban_matrix):
@@ -527,18 +540,27 @@ class PlayFlow:
  			#print ret
 			if ret['result'] == 1 and ret['changed'] == 1:
 				# 手を進める
+				ban_matrix.img.save("server/capture.jpg")
+
 				self.flow_advance(ret['kihu'])
-				print "epoch: " + str(self.epoch)
-				print ret['kihu'].get_txt(utf8 = True)
+				self.log_obj.log( "epoch: " + str(self.epoch))
+				self.log_obj.log(ret['kihu'].get_txt(utf8 = True))
 				self.crt_ban_matrix.print_ban()
 
+				if self.is_learn:
+					self.koma_recognition.set_from_banmatrix(ban_matrix, self.crt_ban_matrix)
+
 		else:
-			print "board recognition err"
+			self.log_obj.log("board recognition err")
+
+		#elapsed_time = time.time() - self.start_time
+		#print ("elapsed_time:{0}".format(elapsed_time)) + "[sec]"
 
 		self.cap_thread = threading.Timer(self.thred_time, self.exec_new_image) 
 		self.cap_thread.start()
 
-	# 手を進める
+
+	# 手を進める(crt_ban_matrix のみの更新) 
 	# validation check はすましている前提
 	def advance(self, kihu):
 
@@ -618,7 +640,7 @@ class PlayFlow:
 
 					elif(len(cap_variety) > 1):
 						# 複数打った駒候補があるときは識別する
-						rec = self.recog_koma_in_list(ban1, cap_variety)
+						rec = self.recog_koma_in_list(ban1, dif_list[0], cap_variety)
 						kihu = Kihu(self.teban, self.epoch + 1, rec, [], dif_list[0], revival = 1)
 						result = 1
 						changed = 1
@@ -631,9 +653,8 @@ class PlayFlow:
 				max_probab = -1.0
 			
 				if(len(movable_cap_list) == 1):
-					result = 1
-					changed = 1
-					kihu = Kihu(self.teban, self.epoch + 1, target, dif_list[0], movable_cap_list[0])
+					next_pos = movable_cap_list[0]
+					kihu = Kihu(self.teban, self.epoch + 1, target, dif_list[0], next_pos)
 				
 				elif(len(movable_cap_list) > 0):
 					for cap_pos in movable_cap_list:
@@ -643,6 +664,8 @@ class PlayFlow:
 							next_pos = cap_pos
 					
 					kihu = Kihu(self.teban, self.epoch + 1, target, dif_list[0], next_pos)
+
+				if(len(movable_cap_list) > 0):
 					if kihu.promotion_validation(): # なっている可能性あり
 						prom_koma = kihu.is_promotion(target)
 						is_prom = self.recog_is_promotion(ban2, self.teban, next_pos, target)
@@ -769,9 +792,12 @@ class PlayFlow:
 		prom_target = kihu.is_promotion()
 		if prom_target == 0:
 			return False
-		koma_list = [target, prom_target]
-		koma = self.recog_koma_in_list(ban_matrix, pos, koma_list)
-		return koma == koma_list[1]
+		prob = self.get_koma_probability(ban_matrix, pos, target)
+		self.log_obj.log("recog is prom" + str(prob))
+		return prob < 0.5
+		#koma_list = [target, prom_target]
+		#koma = self.recog_koma_in_list(ban_matrix, pos, koma_list)
+		#return koma == koma_list[1]
 
 	# 駒候補の中から識別する 先後は別
 	# 先後判定してからやりたい
@@ -784,21 +810,23 @@ class PlayFlow:
 
 	# 単体識別 指定した駒であるか 確からしさの値を返す
 	def get_koma_probability(self, ban_matrix, pos, koma, is_sengo_only = False):
-		koma_recognition = koma_recognition.KomaRecognition()
 		if is_sengo_only: # 先後のみ判定（先手なら１）
-			prob = koma_recognition.get_sengo_probability(ban_matrix, pos)
+			prob = self.koma_recognition.get_sengo_probability(ban_matrix, pos)
 		else:
-			prob = koma_recognition.get_probability(ban_matrix, pos, koma)
+			prob = self.koma_recognition.get_probability(ban_matrix, pos, koma)
 		print pos
 		print "prob = " + str(prob)
 		return prob
 
 	def apery_assist(self, apery):
+		global main_socket
 		self.apery = apery
 		self.is_apery_assist = True
 		# 既に進んでいる場合、局面をaperyオブジェクトに渡す
 		for kihu in self.kihus:
 			self.apery.move_board(kihu.get_usi())
+		if(self.log_obj):
+			self.log_obj.main_socket.set_info_status(1, node_id = 8)
 
 	def get_apery_ans(self):
 		ans = self.apery.get_answer()
@@ -944,33 +972,72 @@ def test():
 #im = Image.open("init_ban1.jpg")
 #recog_one_ban(im)
 
+# print をラップする
+
+class LogObj:
+	def __init__(self, main_socket = None):
+		self.main_socket = main_socket
+		self.default_node_id = 4
+
+	def log(self, line, node_id = 0):
+		if node_id == 0:
+			node_id = self.default_node_id
+		print line
+		if(self.main_socket):
+			self.main_socket.push_info_lines(line, node_id)
+
+	def copy_obj(self, default_id = 4):
+		_copy_obj =  LogObj(self.main_socket)
+		_copy_obj.default_node_id = default_id
+		return _copy_obj
+
 def main():
+	main_socket = None
 	apery = None
-	flow = PlayFlow()
+	log_obj = LogObj()
+	flow = PlayFlow(log_obj)
 	flow.start_flow()
+	
+
 	while(True):
 		# キーボード入力
 		key = cv2.waitKey(1) & 0xFF
 
-		if key == 27 or key == ord('q'): # esc
+		panel_node_id = 0
+		if(main_socket):
+			panel_node_id =  main_socket.pull_panel_node_id() 
+
+		if key == 27 or key == ord('q') or panel_node_id == 4: # esc
 			flow.end_flow()
+			if(main_socket):
+				main_socket.kill_me()
 			break
 		elif key == ord("a"):
 			if(apery == None):
-				print "start apery assist"
+				log_obj.log("start apery assist", 8)
 				apery = apery_call.AperyCall()
 				flow.apery_assist(apery)
 
-		elif key == ord("s"):
+		elif key == ord("s") or panel_node_id == 8:
 			if(apery == None):
 				apery = apery_call.AperyCall()
 				flow.apery_assist(apery)
 
-			print "ask apery"
+			log_obj.log("ask apery", 8)
 			ans = flow.get_apery_ans().get_txt(utf8 = True)
-			print "apery tell you"
-			print ans
+			log_obj.log("apery tell you", 8)
+			log_obj.log(ans, 8)
+		elif key == ord("d") or panel_node_id == 12: # DNN
+			log_obj.log("set machine learn on", 12)
+			flow.is_learn = True
+			if(main_socket):
+				main_socket.set_info_status(1, node_id = 12)
 
+		elif key == ord("m"):
+			if(not(main_socket)):
+				main_socket = main_sock.main()
+				log_obj.main_socket = main_socket
+				log_obj.log("main_socket", 4)
 
 
 	print "successfully ended"

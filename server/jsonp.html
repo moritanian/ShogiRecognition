@@ -6,45 +6,6 @@
 <link href="jsonp.css" rel="stylesheet" />
 
 <script type="text/javascript">
-  function callback(json) {
-    console.log(json);
-    $("#result").html("答えは "+json.answer);
-  }
-
-  function get_status_callback(json){
-    console.log(json);
-    update_status(json);
-  }
-   
-  function send() {
-    var s = document.createElement('script');
-    a = document.form1.a.value;
-    b = document.form1.b.value;
-    param = "?a="+a+"&b="+b
-    s.src = '/cgi-bin/jsonp.py'+param;
-    document.body.appendChild(s);
-    return false;
-  }
-
-  function send_panel(node_id){
-    var url =  "/cgi-bin/panel.py?node_id=" + node_id;
-    $.ajax({
-        url: url,
-        dataType: "jsonp"
-    });
-    console.log(url);
-  }
-
-// サーバから状態の情報を定期的に取得
-function get_status(){
-      var url =  '/cgi-bin/panel.py?get_status=1';
-    $.ajax({
-        url: url,
-        dataType: "jsonp"
-    });
-    console.log(url);
-}
-
  
 $(function(){
 console.log("start");
@@ -52,8 +13,70 @@ console.log("start");
     var node_id = 0;
     var map_parent = $(".node-map");
 
+    /**
+ * 改行コードをBRタグに変換
+ */
+    function nl2br(str) {
+        return str.replace(/[\n\r]/g, "<br/>").replace(/[\s]/g, "&nbsp;");
+    }
+
+    callback = function(json) {
+        $("#result").html("答えは "+json.answer);
+    }
+
+    get_status_callback = function(json){
+        update_status(json);
+    }
+   
+    send = function() {
+        var s = document.createElement('script');
+        a = document.form1.a.value;
+        b = document.form1.b.value;
+        param = "?a="+a+"&b="+b
+        s.src = '/cgi-bin/jsonp.py'+param;
+        document.body.appendChild(s);
+        return false;
+    }
+
+    function send_panel(node_id){
+        var url =  "/cgi-bin/panel.py?node_id=" + node_id;
+        $.ajax({
+            url: url,
+            dataType: "jsonp",
+            jsonpCallback: 'callback',
+            timeout: 4000
+        })
+        .fail(function(){
+            console.log("send_pamel failed");
+        });
+        //console.log(url);
+      }
+
+    // サーバから状態の情報を定期的に取得
+    function get_status(){
+        var url =  '/cgi-bin/panel.py?get_status=1';
+        var node_ids = [3,4,5,7,8,12]; 
+        $.ajax({
+            url: url,
+            dataType: "jsonp",
+            jsonpCallback: 'get_status_callback',
+            timeout: 4000
+        })
+        .done(function(){
+             set_toggle_node($("#node" + 4), true);
+        })
+        .fail(function(){
+            console.log("get status failed");
+            for (var i=0; i< node_ids.length; i++){
+                set_toggle_node($("#node" + node_ids[i]), false);
+            }
+        });
+    }
+
+
     function init_nodes(node_list){
         for(var i=0; i<node_list.length; i++){
+            node_list[i]['log'] = "";
             create_node(node_list[i].type, node_list[i].name, node_list[i].pos);
         }
     }
@@ -122,16 +145,14 @@ console.log("start");
     }
 
     function toggle_node(node){
-      
         var node_id = $(node).attr("node_id");
 
         send_panel(node_id);
-        set_toggle_node(node, !node_list[node_id - 1].is_active);
+      //  set_toggle_node(node, !node_list[node_id - 1].is_active);
       
     }
 
     function set_toggle_node(node, is_active){
-        
         var blk_out = "black-out";
         var node_id = $(node).attr("node_id");
           if(is_active){
@@ -140,7 +161,9 @@ console.log("start");
             $(node).addClass(blk_out);
         } 
         node_list[node_id - 1].is_active = is_active;
-        $(".node-status").text( node_list[node_id - 1].is_active );
+        if(detail_node_id == node_id){
+            $(".node-status").text( node_list[node_id - 1].is_active );
+        }
 
         // 接続しているlineも対応
         var connects = find_connect_by_node_id(node_id);
@@ -172,10 +195,23 @@ console.log("start");
     }
 
     function renown_node_detail(node_id){
+
+       
         $(".node-detail .node-name").text(node_list[node_id - 1].name);
         $(".node-status").text( node_list[node_id - 1].is_active );
-        shadow_anim($(".node-detail"));
-
+        $(".node-log").text( node_list[node_id - 1]["log"]);
+        if(node_id == 5){
+            $(".ban-capture").removeClass("hidden");
+        }else{
+            $(".ban-capture").addClass("hidden");
+        }
+        if(detail_node_id != node_id){
+            $("#node" + detail_node_id).removeClass("large");
+            $("#node" + node_id).addClass("large");
+            detail_node_id = node_id;
+            shadow_anim($(".node-detail"));
+        }
+       
     }
 
     function shadow_anim(element, end_params, time = 1000){
@@ -187,10 +223,19 @@ console.log("start");
         for (var i=0; i<data.length; i++){
             var node_id = data[i].node_id;
             set_toggle_node($("#node" + node_id), data[i].status == 1);
+            if(data[i]["log"] != ""){
+                node_list[i]["log"] += "\n" +  data[i]["log"];
+            }
+            if(detail_node_id == i+1){
+                $(".node-log").text( node_list[i]["log"]);
+            }
         } 
+        var now = new Date().getTime();
+
+        $('.ban-capture img').attr('src', 'capture.jpg?' + now);
     }
 
-
+    detail_node_id = 0;
 
     var node_list = [
         {type: "client", name: "webGL", pos: [487,516], is_active: true},
@@ -198,10 +243,10 @@ console.log("start");
         {type: "local", name: "image recognition", pos: [300, 227], is_active: true}, //3
         {type: "main-node", name: "main", pos: [260 ,338], is_active: true},
         {type: "local", name: "camera input", pos: [210, 440], is_active: true},//5
-        {type: "local", name: "control panel", pos: [212,139], is_active: true},
+        {type: "control", name: "control panel", pos: [212,139], is_active: true},
         {type: "local", name: "bluetooth master", pos: [61, 396], is_active: true},
         {type: "local", name: "apery thread", pos: [69, 266], is_active: true}, //8
-        {type: "local", name: "CGIHttpServer", pos: [174, 221], is_active: true},
+        {type: "control", name: "CGIHttpServer", pos: [174, 221], is_active: true},
         {type: "real-world", name: "webcam", pos: [219, 554], is_active: true},//10
         {type: "client", name: "bluetooth", pos: [73, 562], is_active: true},
         {type: "local", name: "DNN", pos: [323, 130], is_active: false}
@@ -229,9 +274,19 @@ console.log("start");
 
     });
 
+    $("button.update-button").click(function(){
+        get_status();
+        console.log(node_list);
+    })
+
+    $("button.clear-log").click(function(){
+        node_list[detail_node_id - 1]["log"] = "";
+        renown_node_detail(detail_node_id);
+    })
+
     // 定期的に状態取得
     get_status();
-    setInterval(get_status, 5000);
+    setInterval(get_status, 1000);
    
     //要素の取得
     var elements = document.getElementsByClassName("node");
@@ -271,6 +326,15 @@ console.log("start");
         //document.body.addEventListener("touchmove", mmove, false);
         $(map_parent).mousemove(mmove);
         $(map_parent).bind("touchmove", mmove);
+
+        var drag = $(".drag");
+        $(drag).mouseup(mup);
+        //document.body.addEventListener("mouseleave", mup, false);
+        $(map_parent).bind("mouseleave", mup);
+        //drag.addEventListener("touchend", mup, false);
+        $(drag).bind("touchend", mup);
+        //document.body.addEventListener("touchleave", mup, false); 
+        $(map_parent).bind("touchleave", mup);
     }
 
     //マウスカーソルが動いたときに発火
@@ -340,7 +404,7 @@ console.log("start");
 </script>
 </head>
 <body>
-<div class="node ellipse" id="ori-node" style="top: 20px;"><div class="node-title flexiblebox">server</div></div>
+<div class="node ellipse shadowing" id="ori-node" style="top: 20px;"><div class="node-title flexiblebox">server</div></div>
 
 <form name="form1" onsubmit="return send()">
   <input type="text" name="a" value="1"> + 
@@ -349,26 +413,35 @@ console.log("start");
 </form>
 <div id="result">計算結果</div>
 
+<button class="update-button">
+    update
+</button>
+
+
 <div class="node-container">
   <div class="node-map">
-    
-    <!--<div class="node ellipse client"><div class="node-title">webGL</div></div>
-    <div class="node ellipse local"><div class="node-title">main</div></div>
-    <div class="node ellipse local"><div class="node-title">camera input</div></div>
-    <div class="node ellipse local"><div class="node-title">bluetooth</div></div>
-    <div class="node ellipse local"><div class="node-title">apery</div></div>
-    <div class="node ellipse real-world"><div class="node-title">webcam</div></div>
-    <div class="node ellipse real-world"><div class="node-title">sensor</div></div>-->
-
-
   </div>
-  <div class="node-detail">
-    <table>
-        <tr><td>node: </td><td><div class="node-name"></div></td></tr>
-        <tr><td>status</td><td><div class="node-status"></div></td></tr>
-        <tr><td>explain</td><td><div class="explain"></div></div>
-    </table>
-  </div>
+  <div class="info-panels">
+      <div class="node-detail">
+        <table>
+            <tr><td>node: </td><td><div class="node-name"></div></td></tr>
+            <tr><td>status</td><td><div class="node-status"></div></td></tr>
+            <tr><td>explain</td><td><div class="explain"></div></td></tr>
+
+        </table>
+      </div>
+      log
+      <button class="clear-log">clear</button>
+      <div class="main-log">
+        <div class="ban-capture">
+            <img src="capture.jpg">
+        </div>
+        <pre class="node-log"></pre>
+      </div>
+
+      
+
+    </div>
 </div>
 </body>
 </html>

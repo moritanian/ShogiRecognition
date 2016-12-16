@@ -14,21 +14,31 @@ HOST = '127.0.0.1'
 PORT = 50007
 INTERVAL = 1 # 測定間隔
 
-def kill_me():
-    global server, soc
-    soc.fin_f = True
-    # 自分で相手側のソケットをつくる(自分のソケットを終了するため)
-    SocketSlave(back= False)
-    server.close()
-    print "stop"    
-
-
 class SocketMaster:
 
     def __init__(self):
         self.fin_f = False
         self.soc = threading.Timer(0, self.socket_work)
         self.soc.start()
+        info_lines = []
+        for i in range(12):
+            info_lines.append({"node_id": i+1, "log": "", "status": 1})
+        info_lines[7]["status"] = 0
+        info_lines[6]["status"] = 0
+        info_lines[10]["status"] = 0
+        info_lines[11]["status"] = 0
+
+        self.info_lines = info_lines
+
+        self.__panel_node_id = 0
+
+    def kill_me(self):
+        self.fin_f = True
+        # 自分で相手側のソケットをつくる(自分のソケットを終了するため)
+        SocketSlave(back= False)
+        #if(server):
+        #    server.close()
+        print "stop"    
 
     # サーバを作成して動かす関数
     def socket_work(self):
@@ -42,27 +52,59 @@ class SocketMaster:
             conn, addr = s.accept()
             if self.fin_f:
                 break
-            print 'Connected by', addr
+            #print 'Connected by', addr
+            self.push_info_lines("Connected by " + str(addr), 9)
             data = conn.recv(1024)
-            print data
+            #print data
+            self.push_info_lines(str(data), 9)
+
             obj = json.loads(data)
 
             if ('get_status' in obj) and  obj['get_status'] == 1:
-                ret_obj = [{"node_id" :1, "status": 1}, {"node_id": 2,"status": 0},  {"node_id": 3,"status": 0},]
+                json_str = json.dumps(self.info_lines)
+                self.clear_info_lines()
+                #ret_obj = [{"node_id" :1, "status": 1}, {"node_id": 2,"status": 0},  {"node_id": 3,"status": 0},]
 
             elif 'node_id' in obj:
                 node_id = obj["node_id"]
                 print node_id
-                if int(node_id) == 4:
-                    print "fin signal"
-                    kill_me()
+                self.__panel_node_id = node_id
+                
+                #if int(node_id) == 4:
+                #    print "fin signal"
+                #    self.kill_me()
+
+                #elif int(node_id) == 8: # apery
+
                 ret_obj = "node_id " + str(obj["node_id"])
+                json_str = json.dumps(ret_obj)
             else:
                 c = obj['a'] + obj['b'] + 1
                 ret_obj = {"answer": c}
-            
-            conn.send(json.dumps(ret_obj))
+                json_str = json.dumps(ret_obj)
+                
+            conn.send(json_str)
             conn.close()
+
+    # control panel に渡すための状態のinfoを蓄える
+    def push_info_lines(self, line, node_id = 4):
+        self.info_lines[node_id -1]["log"] += line + "\n"
+
+    def set_info_status(self, status, node_id = 4):
+        self.info_lines[node_id -1]["status"] = status
+
+    def clear_info_lines(self, node_id = 0):
+        index_list = range(len(self.info_lines))
+        if node_id != 0:
+            index_list = (node_id - 1)
+        for i in index_list:
+            self.info_lines[i]["log"] = ""
+
+    # panel_node_id 読み出し　よみだされたあとは初期値に戻す 
+    def pull_panel_node_id(self):
+        ret = self.__panel_node_id
+        self.__panel_node_id = 0
+        return ret
 
 def SocketSlave(obj= {}, port = 50007, back = True):
     json_str = json.dumps(obj)
@@ -102,19 +144,24 @@ class Server:
         os.kill(self.proc.pid,  signal.CTRL_BREAK_EVENT)
         #self.proc.kill()
 
-
-if __name__ == '__main__':
-
+def main():
+    global soc, server
+    server = None
     # サーバ起動
-    server = Server()
+    #print "server start"
+    #server = Server()
      
     # サーバを作成して動かす
     soc = SocketMaster()
 
+    return soc
+
+if __name__ == '__main__':
+    soc = main()
     while (True):
         key = raw_input()
         if key == "q":
-            kill_me()
+            soc.kill_me()
             break
 
     print "fin"

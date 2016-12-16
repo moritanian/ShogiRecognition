@@ -10,6 +10,7 @@ import cv2
 import copy
 import matplotlib.pyplot as plt
 from scipy import dot, roll
+import random
 
 import chain_recog
 import DNN
@@ -38,11 +39,15 @@ NGIN = 12
 UMA = 13
 RYU = 14
 
-# 機械学習クラスとのつなぎこみ用クラス。　駒認識を行う
+# 画像処理及び機械学習クラスとのつなぎこみ用クラス。　駒認識を行う
 # 駒８種類の認識　＋　先後識別
 class KomaRecognition:
 
-	def __init__(self):
+	def __init__(self, is_learning = False, log_obj = None):
+		self.flg = 0
+
+		self.log_obj = log_obj
+		self.is_learning = is_learning # 進行形で学習を行うか
 
 		self.SengoLearnFile = "sengo_recog.txt"
 		self.SengoLearnW = None
@@ -54,7 +59,7 @@ class KomaRecognition:
 
 		snippet_img_arrs = []
 		for i in range(8):
-			snippet_img_arrs.append(np.array([]))
+			snippet_img_arrs.append([])
 		self.snippet_img_arrs = snippet_img_arrs
 
 		self.__row_ave = 0
@@ -62,38 +67,128 @@ class KomaRecognition:
 
 	def get_probability(self, ban_matrix, pos, koma):
 		koma_abs = abs(koma)
-		if KomaRecognition.KomaLearnW[koma_abs] == None:
-			f = open(KomaRecognition.KomaLearnFile % (koma_abs))
-			KomaRecognition.KomaLearnW[koma_abs] = pickle.load(f)
+		if self.KomaLearnW[koma_abs  -1] == None:
+			f = open(self.KomaLearnFile % (koma_abs- 1))
+			self.KomaLearnW[koma_abs -1] = pickle.load(f)
 		is_inv = False
 		if koma < 0:
 			isinv = True
 
-		return self.__get_probability(KomaRecognition.KomaLearnW[koma_abs], ban_matrix, pos,  is_inv)
+		return self.__get_probability(self.KomaLearnW[koma_abs], ban_matrix, pos,  is_inv)
 
 	def get_sengo_probability(self, ban_matrix, pos):
-		if KomaRecognition.SengoLearnW == None:
-			f = open(KomaRecognition.SengoLearnFile)
-			KomaRecognition.SengoLearnW = pickle.load(f)
-		return self.__get_probability(KomaRecognition.SengoLearnW, ban_matrix, pos)
+		if self.SengoLearnW == None:
+			f = open(self.SengoLearnFile)
+			self.SengoLearnW = pickle.load(f)
+		return self.__get_probability(self.SengoLearnW, ban_matrix, pos)
 
 	def __get_probability(self, learn_data, ban_matrix, pos, is_inv = False):
 		arr = ban_matrix.get_masu(pos[0], pos[1]).snippet_img_arr
 		if is_inv:
-			arr = inverse_img(arr)
+			arr = self.inverse_img_arr(arr)
 		ret =  DNN.recog(learn_data, arr, [0])
 		return ret['result']
 
-	def set_snippet_img_arr(self, img_arr, target):
+	# 盤面進行時に呼び出される想定 
+	# 盤面データから画像を蓄え、非同期に学習していく
+	def set_from_banmatrix(self, ban_matrix, crt_ban_matrix):
+		# 指定枚数だけ盤面から駒を取得し、学習用データ配列に追加
+		take_nums =  [4,4,4,4,4,2,2,2] # 歩、香、桂、銀、金、角、飛、王or 玉
+		
+		taken_flg = False
+		x_list = range(9)
+		y_list = range(9)
+		random.shuffle(x_list)
+		random.shuffle(y_list)
+		for x in x_list:
+			if taken_flg:
+				break
+			for y in y_list:
+				if taken_flg:
+					break
+				target = crt_ban_matrix.get_koma(x,y)
+				abs_target = abs(target)
+				if(abs_target != 0 and abs_target < 9 and take_nums[abs_target - 1] > 0):
+					#self.__set_snippet_img_arr(ban_matrix.get_snippet_img(x,y), target)
+					self.__set_snippet_img_arr(ban_matrix.get_masu(x,y).snippet_img_arr, target)
+					take_nums[abs_target - 1] -= 1
+					
+					if take_nums.count(0) == len(take_nums):
+						taken_flg = True
+
+		# 別スレッドで学習
+		self.learn_thread = threading.Timer(0, self.learn_seq) 
+		self.learn_thread.start()
+
+	# セットされた学習用データからランダムにきめられた数だけとりだして学習(１手ごと)
+	def learn_seq(self):
+		self.log_obj.log("learn seq")
+
+		# ８種類学習
+		loop_in_each = 10 # 1種類あたり何枚学習するか
+		false_ratio = 0.7 # y_data == 0 になる割合
+		for i in range(8):
+			for count in range(loop_in_each):
+				err_sum = 0
+				ans = 1
+				if(random.random() < false_ratio):
+					ans = 0
+				if(ans == 1): # 
+					size = len(self.snippet_img_arrs[i])
+					index = int(random.random()*size)
+					x_data = self.snippet_img_arrs[i][index]
+
+				else: # ほかの駒
+					# まずはどの駒かランダムに決める
+					target = int(random.random()*7)
+					if(i <= target ):
+						target+= 1 
+					size = len(self.snippet_img_arrs[target])
+
+					index = int(random.random()*size)
+					x_data = self.snippet_img_arrs[target][index]
+					if(self.flg == 1):
+						self.flg = 2
+						print target+1
+						self.show_from_arr(x_data)
+				#self.log_obj.log(str(x_data.shape))
+				#Image.fromarray(x_data*256).show()
+				(err, self.KomaLearnW[i]) = DNN.batch_learn(self.KomaLearnW[i], x_data, ans)
+				err_sum += err
+			self.log_obj.log(str(err_sum))
+		self.log_obj.log("end learn seq")
+		self.test_learn()
+
+	def test_learn(self):
+		loop_num = 10
+		target = 1
+		index = 0
+		test_data_set = []
+		success = 0
+		for i in range(loop_num):
+			if(len(self.snippet_img_arrs[target-1]) <= index):
+				target+=1
+				index = 0
+			if(target == 9):
+				loop_num = i
+				break
+			ret = DNN.recog(self.KomaLearnW[target - 1], self.snippet_img_arrs[target -1][index], [1])
+			if ret["success"] == 1:
+				success += 1
+			index += 1
+
+		self.log_obj.log("test_learn")
+		self.log_obj.log(str(success) + "/" +  str(loop_num))
+
+
+
+	def __set_snippet_img_arr(self, img_arr, target):
 		abs_target = target
 		if(abs_target < 0):
 			abs_target = - target
 			self.snippet_img_arrs[abs_target - 1].append(self.inverse_img_arr(img_arr))
 		else:
-			self.snippet_img_arrs[abs_target - 1].append(img_arr)
-
-
-
+			self.snippet_img_arrs[abs_target - 1].append( img_arr)
 
 	def set_masu_from_one_pic(self, ban_matrix):
 		img = ban_matrix.img
@@ -114,14 +209,15 @@ class KomaRecognition:
 				s_img_pos = [line_list[1][x], line_list[0][y]]
 				r_img = img_list[x][y]
 				masu = square_space.Masu(x, y , r_img, 0, s_img_pos)
-				img = self.max_pooling(r_img)
-				#if(x==0 and y==0):
-					#Image.fromarray(img).show()
+				#img = self.max_pooling(r_img)
+				img = r_img
+				if(self.flg == 0):
+					Image.fromarray(self.inverse_img(img)).show()
+					self.flg = 1
 				masu.snippet_img_arr = self.convert_arr_from_img(img)/255
-				masu.is_koma = self.is_koma(masu.snippet_img_arr)
+				masu.is_koma = self.is_koma(self.max_pooling(r_img)/255)
 				ban_matrix.masu_data[x][y] = masu
 		return 1
-
 
 	def add_line(self, img, line_list):
 		c_img = copy.copy(img)
@@ -228,6 +324,10 @@ class KomaRecognition:
 			self.__col_ave = (line_list[1][-2] - line_list[1][1])/7
 			self.__row_ave =  (line_list[0][-2] - line_list[0][1])/7
 
+			self.log_obj.log("row_ave: " + str(self.__row_ave), 3)
+			self.log_obj.log("col_ave: " + str(self.__col_ave), 3)
+
+
 		img_list = []
 		for col in range(9):
 			row_list = []
@@ -247,12 +347,16 @@ class KomaRecognition:
 
 	def is_koma(self, img_arr):
 		trim_size = 4
-		img_arr2 = copy.copy(img_arr.reshape([self.__col_ave/2, self.__row_ave/2]))
+		#img_arr2 = copy.copy(img_arr.reshape([self.__col_ave/2, self.__row_ave/2]))
+		img_arr2 = img_arr
 		img_arr2 = img_arr2[trim_size:self.__col_ave/2 - trim_size, trim_size:self.__row_ave/2 - trim_size]
 		#print np.mean(img_arr2)
 		if(np.mean(img_arr2) < 0.3):
 			return False
 		return True
+
+	def show_from_arr(self, arr):
+		Image.fromarray(arr.reshape([self.__col_ave, self.__row_ave]) * 255).show()
 
 
 
