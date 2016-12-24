@@ -17,6 +17,7 @@ import apery_call
 import WWW
 import koma_recognition
 import square_space
+import wroom_master
 
 import pickle
 
@@ -202,6 +203,8 @@ class Kihu:
 
 		now = datetime.datetime.now()
 		self.create_time = now.strftime("%Y/%m/%d %H:%M:%S")
+
+		self.is_pointed_good = False
 
 	# ここでは単なる動きの確認を行う
 	def validation_check(self):
@@ -496,6 +499,10 @@ class PlayFlow:
 
 		self.is_learn = False # 機械学習するか
 
+		self.__capture_path = "server/capture.jpg"
+		self.__first_capture_flg = False
+
+
 
 	# スレッドを立てて一定時間ごとにカメラから読む
 	def start_flow(self):
@@ -532,6 +539,12 @@ class PlayFlow:
 		# 盤面セットに成功したら
 		if self.koma_recognition.set_masu_from_one_pic(ban_matrix):
 			#ban_matrix.print_ban(over_write = False)
+			if(self.__first_capture_flg == False):
+				self.__first_capture_flg = True
+				#ban_matrix.img.save(self.__capture_path)
+				print "cap"
+
+
 
 			# 前の局面と比較
 			ret = self.judge_two_ban_matrix(self.crt_ban_matrix, ban_matrix)
@@ -540,7 +553,7 @@ class PlayFlow:
  			#print ret
 			if ret['result'] == 1 and ret['changed'] == 1:
 				# 手を進める
-				ban_matrix.img.save("server/capture.jpg")
+				ban_matrix.img.save(self.__capture_path)
 
 				self.flow_advance(ret['kihu'])
 				self.log_obj.log( "epoch: " + str(self.epoch))
@@ -556,7 +569,7 @@ class PlayFlow:
 		#elapsed_time = time.time() - self.start_time
 		#print ("elapsed_time:{0}".format(elapsed_time)) + "[sec]"
 
-		self.cap_thread = threading.Timer(self.thred_time, self.exec_new_image) 
+		self.cap_thread = threading.Timer(self.thred_time, self.exec_new_image()) 
 		self.cap_thread.start()
 
 
@@ -828,13 +841,21 @@ class PlayFlow:
 		if(self.log_obj):
 			self.log_obj.main_socket.set_info_status(1, node_id = 8)
 
-	def get_apery_ans(self):
+	def get_apery_ans(self, by_wroom = False):
 		ans = self.apery.get_answer()
 		kihu = Kihu(teban = self.teban).set_from_usi(ans[0])
 		# usiでの棋譜データは移動の場合、targetを明記していないため、局面から取得する
 		if(kihu.revival == 0):
 			kihu.target = self.crt_ban_matrix.get_koma(kihu.prev_pos[0], kihu.prev_pos[1])
+		
+		if(by_wroom): # deviceのさす位置を推定し、あっているか判定
+			pointed_pos = self.koma_recognition.get_pointed_pos()
+			kihu.is_pointed_good = (pointed_pos[0] == kihu.next_pos[0] and pointed_pos[1] == kihu.pointed_pos[1])
+			self.log_obj.log("get_apery_ans by_room" +  str(kihu.is_pointed_good))
+		
 		return kihu
+
+
 
 
 
@@ -994,6 +1015,7 @@ class LogObj:
 def main():
 	main_socket = None
 	apery = None
+	wroom = None
 	log_obj = LogObj()
 	flow = PlayFlow(log_obj)
 	flow.start_flow()
@@ -1011,6 +1033,8 @@ def main():
 			flow.end_flow()
 			if(main_socket):
 				main_socket.kill_me()
+			if(wroom):
+				wroom.end()
 			break
 		elif key == ord("a"):
 			if(apery == None):
@@ -1033,11 +1057,18 @@ def main():
 			if(main_socket):
 				main_socket.set_info_status(1, node_id = 12)
 
-		elif key == ord("m"):
+		elif key == ord("m"): # main socket
 			if(not(main_socket)):
 				main_socket = main_sock.main()
 				log_obj.main_socket = main_socket
 				log_obj.log("main_socket", 4)
+
+		elif key == ord("w") or panel_node_id == 7:
+			if(not(wroom)):
+				wroom = wroom_master.WroomHost(flow.get_apery_ans, log_obj = log_obj.copy_obj(7))
+				log_obj.log("wroom master start")
+				if(main_socket):
+					main_socket.set_info_status(1, node_id = 7)
 
 
 	print "successfully ended"

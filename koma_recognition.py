@@ -358,6 +358,62 @@ class KomaRecognition:
 	def show_from_arr(self, arr):
 		Image.fromarray(arr.reshape([self.__col_ave, self.__row_ave]) * 255).show()
 
+	# device で指し示された場所取得
+	def get_pointed_pos(self):
+		pos = [0,0]
+		return pos
 
+	def get_tip_abspos(self, back_img, img):
+		im3 = back_img - img
+		kernel = np.ones((12,12),np.uint8)
+		#im3 = cv2.erode(im3,kernel,iterations = 1)
+		#im3 = cv2.dilate(im3,kernel,iterations = 1) * 20
+		im3 = cv2.morphologyEx(im3, cv2.MORPH_OPEN, kernel)
+		im3 = cv2.morphologyEx(im3, cv2.MORPH_CLOSE, kernel)
+		im3 = im3 *10
+		im3 = cv2.adaptiveThreshold(im3,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)
+		find = np.where(im3 == 0)
+		size = find[0].size
+		x = int(find[1][0:size/100].mean())
+		y = int(find[0][0:size/100].mean())
+		
+		path = "sample.jpg"
+		cv2.circle(im3,(x,y),2,(0,0,255),3)
+		cv2.imwrite(path, im3)
+		
+		return [x, y]
+
+
+
+
+
+if False:
+	from PIL import Image
+	imc = Image.open("sample105.jpg")
+	im = np.array(imc.convert('L'))
+
+	imc2 = Image.open("sample106.jpg")
+	im2 = np.array(imc2.convert('L'))
+
+	KomaRecognition().get_tip_abspos(im, im2)
+
+if False:
+	img = cv2.imread('sample105.jpg',0)
+	img = cv2.medianBlur(img,5)
+	cimg = cv2.cvtColor(img,cv2.COLOR_GRAY2BGR)
+
+	circles = cv2.HoughCircles(img,cv2.HOUGH_GRADIENT,1,20,param1=50,param2=30,minRadius=0,maxRadius=0)
+	circles = np.uint16(np.around(circles))
+	for i in circles[0,:]:
+	 # draw circles
+	 cv2.circle(cimg,(i[0],i[1]),i[2],(0,255,0),2)
+	 # draw center of circles
+	 cv2.circle(cimg,(i[0],i[1]),2,(0,0,255),3)
+
+	cv2.imshow('detected circles',cimg)
+	cv2.waitKey(0)
+	cv2.destroyAllWindows()
+
+	cv2.imwrite('sample.jpg',cimg)
 
 

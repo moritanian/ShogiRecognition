@@ -121,6 +121,7 @@ def SocketSlave(obj= {}, port = 50007, back = True):
     #print 'Received', repr(data)
     return json.loads(data)
 
+# 2016/12/25 現在　使用していない　サーバは別ウィンドウでたちあげること
 class Server:
     def __init__(self):
         cmd = "python cgiserver.py"

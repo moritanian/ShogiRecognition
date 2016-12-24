@@ -55,7 +55,7 @@ console.log("start");
     // サーバから状態の情報を定期的に取得
     function get_status(){
         var url =  '/cgi-bin/panel.py?get_status=1';
-        var node_ids = [3,4,5,7,8,12]; 
+        var node_ids = [3,4,5,7,8,10, 11,12]; // main からの応答がなくなった時にグレーアウトするノード
         $.ajax({
             url: url,
             dataType: "jsonp",
@@ -202,6 +202,7 @@ console.log("start");
         $(".node-log").text( node_list[node_id - 1]["log"]);
         if(node_id == 5){
             $(".ban-capture").removeClass("hidden");
+            $(".node-log").text("<h2>TODO  画像に認識を表す赤枠つけたい</h2>");
         }else{
             $(".ban-capture").addClass("hidden");
         }
@@ -244,11 +245,11 @@ console.log("start");
         {type: "main-node", name: "main", pos: [260 ,338], is_active: true},
         {type: "local", name: "camera input", pos: [210, 440], is_active: true},//5
         {type: "control", name: "control panel", pos: [212,139], is_active: true},
-        {type: "local", name: "bluetooth master", pos: [61, 396], is_active: true},
+        {type: "local", name: "wroom master", pos: [61, 396], is_active: true},
         {type: "local", name: "apery thread", pos: [69, 266], is_active: true}, //8
         {type: "control", name: "CGIHttpServer", pos: [174, 221], is_active: true},
         {type: "real-world", name: "webcam", pos: [219, 554], is_active: true},//10
-        {type: "client", name: "bluetooth", pos: [73, 562], is_active: true},
+        {type: "client", name: "wroom", pos: [73, 562], is_active: true},
         {type: "local", name: "DNN", pos: [323, 130], is_active: false}
     ];
     init_nodes(node_list);
