@@ -93,10 +93,9 @@ class WroomHost:
 			# threadingを使って、スレッドを生成する。マルチコアに対応させたい場合は,multiprocessingを使えば良い。
 			# targetは呼び出す関数(オブジェクト)を指定し、argsはその引数を指定している。
 			client_handler.start()
-		    # 処理を開始する。
+			# 処理を開始する。
 
-		  
-
+	# TODO クソコードすぎる。処理を分割する
 	def handle_client(self, client_socket):
 		self.connection_num += 1
 		self.clients.append(client_socket)

@@ -500,7 +500,8 @@ class PlayFlow:
 		self.is_learn = False # 機械学習するか
 
 		self.__capture_path = "server/capture.jpg"
-		self.__first_capture_flg = False
+		self.__capture_count = 18
+		self.newest_ban_matrix = None
 
 
 
@@ -539,21 +540,26 @@ class PlayFlow:
 		# 盤面セットに成功したら
 		if self.koma_recognition.set_masu_from_one_pic(ban_matrix):
 			#ban_matrix.print_ban(over_write = False)
-			if(self.__first_capture_flg == False):
-				self.__first_capture_flg = True
-				#ban_matrix.img.save(self.__capture_path)
-				print "cap"
-
-
+			self.newest_ban_matrix = ban_matrix
 
 			# 前の局面と比較
 			ret = self.judge_two_ban_matrix(self.crt_ban_matrix, ban_matrix)
 			if not(ret['err'] == ""):
 				print ret['err'].decode('utf-8') 
+
+			else:
+				self.__capture_count += 1
+				if(self.__capture_count == 20):
+
+					#self.__capture_count = 0
+					ban_matrix.img.save(self.__capture_path)
+					print "cap"
+
  			#print ret
 			if ret['result'] == 1 and ret['changed'] == 1:
 				# 手を進める
 				ban_matrix.img.save(self.__capture_path)
+				self.__capture_count = 0
 
 				self.flow_advance(ret['kihu'])
 				self.log_obj.log( "epoch: " + str(self.epoch))
@@ -569,7 +575,7 @@ class PlayFlow:
 		#elapsed_time = time.time() - self.start_time
 		#print ("elapsed_time:{0}".format(elapsed_time)) + "[sec]"
 
-		self.cap_thread = threading.Timer(self.thred_time, self.exec_new_image()) 
+		self.cap_thread = threading.Timer(self.thred_time, self.exec_new_image) 
 		self.cap_thread.start()
 
 
@@ -838,7 +844,7 @@ class PlayFlow:
 		# 既に進んでいる場合、局面をaperyオブジェクトに渡す
 		for kihu in self.kihus:
 			self.apery.move_board(kihu.get_usi())
-		if(self.log_obj):
+		if(self.log_obj and self.log_obj.main_socket):
 			self.log_obj.main_socket.set_info_status(1, node_id = 8)
 
 	def get_apery_ans(self, by_wroom = False):
@@ -849,9 +855,18 @@ class PlayFlow:
 			kihu.target = self.crt_ban_matrix.get_koma(kihu.prev_pos[0], kihu.prev_pos[1])
 		
 		if(by_wroom): # deviceのさす位置を推定し、あっているか判定
-			pointed_pos = self.koma_recognition.get_pointed_pos()
-			kihu.is_pointed_good = (pointed_pos[0] == kihu.next_pos[0] and pointed_pos[1] == kihu.pointed_pos[1])
-			self.log_obj.log("get_apery_ans by_room" +  str(kihu.is_pointed_good))
+			advanced_img =  Image.open(self.__capture_path)
+			pointed_pos = self.koma_recognition.get_pointed_pos(advanced_img, self.newest_ban_matrix)
+			if(pointed_pos):
+				self.log_obj.log("your point is " + str(pointed_pos[0]) + str(pointed_pos[1]) ,3)
+				print kihu.next_pos
+				kihu.is_pointed_good = (pointed_pos[0] == kihu.next_pos[0] and pointed_pos[1] == kihu.next_pos[1])
+			else:
+				self.log_obj.log("your point is not found!!" ,3)
+
+				kihu.is_pointed_good = False
+
+			self.log_obj.log("get_apery_ans by_room " +  str(kihu.is_pointed_good), 3)
 		
 		return kihu
 
@@ -1069,6 +1084,15 @@ def main():
 				log_obj.log("wroom master start")
 				if(main_socket):
 					main_socket.set_info_status(1, node_id = 7)
+
+		elif key == ord("y") or panel_node_id == 11: # wroom 認識(for debug)
+			log_obj.log("wroom debug", 11)
+			if(apery == None):
+				log_obj.log("start apery assist", 8)
+				apery = apery_call.AperyCall()
+				flow.apery_assist(apery)
+			flow.get_apery_ans( by_wroom = True)
+
 
 
 	print "successfully ended"

@@ -8,8 +8,8 @@ import os.path
 from scipy import ndimage
 import cv2
 import copy
-import matplotlib.pyplot as plt
-from scipy import dot, roll
+#import matplotlib.pyplot as plt
+#from scipy import dot, roll
 import random
 
 import chain_recog
@@ -20,6 +20,7 @@ import pickle
 import threading
 import sys
 import datetime
+import math
 
 URL = "http://localhost/flyby/"
 
@@ -203,6 +204,7 @@ class KomaRecognition:
 			return 0
 		img_list = self.devide_img(im2, line_list)
 		#Image.fromarray(add_line(im2, line_list)).show()
+		ban_matrix.edge_abspos = [line_list[1][1] - self.__col_ave, line_list[0][1] - self.__row_ave]
 
 		for x in range(9):
 			for y in range(9):
@@ -359,27 +361,52 @@ class KomaRecognition:
 		Image.fromarray(arr.reshape([self.__col_ave, self.__row_ave]) * 255).show()
 
 	# device で指し示された場所取得
-	def get_pointed_pos(self):
-		pos = [0,0]
+	def get_pointed_pos(self, advanced_img, newest_ban_matrix):
+		abspos = self.get_tip_abspos(advanced_img, newest_ban_matrix.img)
+		
+		pos = None
+		print abspos
+		print newest_ban_matrix.edge_abspos
+		if(abspos):
+			x = int((abspos[0] - newest_ban_matrix.edge_abspos[0])/ self.__col_ave)
+			y = int((abspos[1] - newest_ban_matrix.edge_abspos[1])/self.__row_ave)
+			if(0<=x and x < 9 and 0<= y and y< 9):
+				pos = [x,y]
 		return pos
 
 	def get_tip_abspos(self, back_img, img):
-		im3 = back_img - img
-		kernel = np.ones((12,12),np.uint8)
+		im = np.array(back_img.convert('L'))
+		im2 = np.array(img.convert('L'))
+		
+		im3 = im - im2
+		kernel = np.ones((16,16),np.uint8)
 		#im3 = cv2.erode(im3,kernel,iterations = 1)
 		#im3 = cv2.dilate(im3,kernel,iterations = 1) * 20
 		im3 = cv2.morphologyEx(im3, cv2.MORPH_OPEN, kernel)
 		im3 = cv2.morphologyEx(im3, cv2.MORPH_CLOSE, kernel)
 		im3 = im3 *10
+
+		path = "sample.jpg"
+		cv2.imwrite(path, im3)
+		
 		im3 = cv2.adaptiveThreshold(im3,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)
+		#im3 = cv2.morphologyEx(im3, cv2.MORPH_CLOSE, kernel)
+		#im3 = cv2.morphologyEx(im3, cv2.MORPH_CLOSE, kernel)
+
 		find = np.where(im3 == 0)
 		size = find[0].size
-		x = int(find[1][0:size/100].mean())
-		y = int(find[0][0:size/100].mean())
-		
-		path = "sample.jpg"
-		cv2.circle(im3,(x,y),2,(0,0,255),3)
-		cv2.imwrite(path, im3)
+		if(not(math.isnan(size)) and size):
+			y = int(find[1][0:size/100].mean())
+			x = int(find[0][0:size/100].mean())
+			
+			path = "sample.jpg"
+			cv2.circle(im3,(y, x),2,(0,0,255),3)
+			cv2.circle(im3,(30, 143),2,(0,0,255),3)
+			cv2.imwrite(path, im3)
+		else :
+			#path = "sample.jpg"
+			#cv2.imwrite(path, im3)
+			return None
 		
 		return [x, y]
 
