@@ -33,12 +33,14 @@ class WroomHost:
 		self.connection_num = 0
 		self.clients = []
 
+		self.get_ans_lambda = get_ans_lambda
+
 		self.VOICE_MODE = 1
 		self.KIHU_MODE = 2
 		self.TEST_VOICE_MODE = 3
 
-		self.mode = self.VOICE_MODE
-		#self.mode = self.KIHU_MODE
+		#self.mode = self.VOICE_MODE
+		self.mode = self.KIHU_MODE
 		#self.mode = self.TEST_VOICE_MODE
 		
 		self.voice_size = 1024
@@ -46,7 +48,9 @@ class WroomHost:
 		self.test_hz = 100
 
 		self.__end_f = False
-		self.bind_ip = 'localhost'
+		self.bind_ip = ''
+		self.bind_ip = socket.gethostbyname(socket.gethostname())
+
 		self.bind_port = 9999
 
 		self.server = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -60,6 +64,7 @@ class WroomHost:
 		#コネクションの最大保存数を設定する。
 
 		if(self.log_obj):
+			self.log_obj.log("wroom master start")
 			self.log_obj.log('[*]Listening on %s:%d' % (self.bind_ip,self.bind_port))
 
 		client_handler = threading.Thread(target=self.server_work)
@@ -121,7 +126,7 @@ class WroomHost:
 					if(self.mode == self.KIHU_MODE): # bibe info
 						if(self.log_obj):
 							self.log_obj.log("send kihu")
-						ret = self.get_ans_lambda( by_wroom = True)
+						kihu = self.get_ans_lambda( by_wroom = True)
 						bibe = "0"
 						if(kihu.is_pointed_good):
 							bibe = "1"
@@ -130,7 +135,7 @@ class WroomHost:
 					
 					elif(self.mode == self.VOICE_MODE):  # voice send
 						kihu = self.get_ans_lambda()
-						text = "..私は、 " + kihu.get_txt(utf8 = True) + " がいいと思います。.."
+						text = "..私は、 " + kihu.get_voice_txt() + " がいいと思います。.."
 						self.voice_path = synceAPI.request_API(text)
 						#self.voice_path = "tatta2.wav"
 						audioS = send_audio.AudioSender(self.voice_path)

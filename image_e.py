@@ -305,6 +305,25 @@ class Kihu:
 			return txt.decode('utf-8')
 		return txt
 
+	# 音声合成用テキスト
+	def get_voice_txt(self, teban_voice = True):
+		txt = ""
+		if(self.teban == 1):
+			txt += "先手"
+		else:
+			txt += "後手"
+
+		txt += " "
+		txt += str(9 - self.next_pos[1])
+		txt += " "
+		txt += str(self.next_pos[0] + 1)
+		txt += " "
+		txt += self.get_koma_voice_txt(self.target)
+		if(self.promotion):
+			txt += "なる"
+		txt += " "
+		return txt
+
 	def get_usi(self): #usi形式で取得
 		if(self.revival):
 			usi_t = self.__usi_targets_first[abs(self.target) - 1]
@@ -377,6 +396,39 @@ class Kihu:
 			txt = "馬"
 		elif koma == RYU:
 			txt = "竜"
+		return txt
+
+	def get_koma_voice_txt(self, koma):
+		koma = abs(koma)
+		txt = ""
+		if koma == HU:
+			txt = "ふ-"
+		elif koma == KYO:
+			txt = "きょう"
+		elif koma == KEI:
+			txt = "けい"
+		elif koma == GIN:
+			txt = "ぎん"
+		elif koma == KIN:
+			txt = "きん"
+		elif koma == KAK:
+			txt = "かく"
+		elif koma == HIS:
+			txt = "ひ"
+		elif koma == OHO:
+			txt = "おう"
+		elif koma == TO:
+			txt = "と"
+		elif koma == NKYO:
+			txt = "なりきょう"
+		elif koma == NKEI:
+			txt = "なりけい"
+		elif koma == NGIN:
+			txt = "なりぎん"
+		elif koma == UMA:
+			txt = "うま"
+		elif koma == RYU:
+			txt = "りゅう"
 		return txt
 
 	# promotion できるならpromoption した値が、できない場合、0が帰る
@@ -881,6 +933,10 @@ class PlayFlow:
 			self.log_obj.main_socket().set_info_status(1, node_id = 8)
 
 	def get_apery_ans(self, by_wroom = False):
+		if(not(self.apery)):
+			self.log_obj.log("start apery assist", 8)
+			apery = apery_call.AperyCall()
+			self.apery_assist(apery)
 		ans = self.apery.get_answer()
 		kihu = Kihu(teban = self.teban).set_from_usi(ans[0])
 		# usiでの棋譜データは移動の場合、targetを明記していないため、局面から取得する
@@ -1138,7 +1194,7 @@ def main():
 		elif key == ord("w") or panel_node_id == 7:
 			if(not(wroom)):
 				wroom = wroom_master.WroomHost(flow.get_apery_ans, log_obj = log_obj.copy_obj(7))
-				log_obj.log("wroom master start")
+				
 				if(main_socket):
 					main_socket.set_info_status(1, node_id = 7)
 

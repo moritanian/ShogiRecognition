@@ -16,12 +16,12 @@ def request_API(text = ",,焼きそばに近いが勝ってもいないし負け
 	#レスポンスオブジェクトのjsonメソッドを使うと、
 	    #JSONデータをPythonの辞書オブジェクトに変換して取得できる
 	#print (response.content)
-	f_name = "temp1.wav"
+	f_name = "wroom/temp1.wav"
 	f = open(f_name, "wb")
 	f.write(response.content)
 	f.close() 
-	subprocess.call("sox/sox " +  f_name + " -b -u -r 7800 kihu.wav")
-	return "kihu.wav"
+	subprocess.call("wroom/sox/sox " +  f_name + " -b -u -r 7800 wroom/kihu.wav")
+	return "wroom/kihu.wav"
 
 
 #request_API()
