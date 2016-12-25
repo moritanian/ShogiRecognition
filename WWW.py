@@ -24,12 +24,14 @@ def Post(url, params = {},  timeout=5):
 		print ("POST URL err")
 		return None
 	json_str = f.read()
+
 	try:
    		ret = json.loads(json_str)
 	except ValueError:
 		print "json parse Err"
    		print json_str
-   		exit()
+   		return None
+   		#exit()
 
    	return ret
 

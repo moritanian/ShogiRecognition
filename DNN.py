@@ -4,13 +4,13 @@ import numpy as np
 from PIL import Image
 import glob
 import os.path
-from scipy import ndimage
+#from scipy import ndimage
 import random
 import copy
 import sys
 import time
 import math
-import import_cifar
+#import import_cifar
 
 # global
 learn_weight = 0.014
@@ -434,29 +434,6 @@ def before_filter_img(img):
 	#im = div_img(1.0, im)	
 	return im
 
-# 微分フィルタ
-def div_img(w, img):
-	fil = np.array( [[-w , 0, w],
-       			[-w, 0, w],
-       			[-w, 0, w]])
-	con = apply_filter(fil, img) #畳み込み
-	return con
-
-# 微分フィルタ
-def div_img2(w, img):
-	fil = np.array( [[-w , -w, -w],
-       			[0, 0, 0],
-       			[w, w, w]])
-	con = apply_filter(fil, img) #畳み込み
-	return con
-
-def laplacian(img):
-	fil = np.array( [[1.0 , 1.0, 1.0],
-       			[1.0, -8.0, 1.0],
-       			[1.0, 1.0, 1.0]])
-	con = apply_filter(fil, img) #畳み込み
-	return con
-
 def max_pooling(img):
 	h = img.size/2/img[0].size
 	w = img[0].size/2
@@ -483,16 +460,6 @@ def min_pooling(img):
 		for y in range(w):
 			r_img[x][y] = min(img[x*2][y*2], img[x*2+1][y*2], img[x*2][y*2+1], img[x*2+1][y*2+1]) 
 	return r_img
-
-def gaussian_img(img):
-	fil = np.array( [[1.0 , 2.0, 1.0],
-       			[2.0, 4.0, 2.0],
-       			[1.0, 2.0, 1.0]])/16.0
-	con = apply_filter(fil, img) #畳み込み
-	return con
-
-def apply_filter(fil, img):
-	return  ndimage.convolve(img, fil)
 
 
 # 重み配列(2次元)　でarrayから値を計算

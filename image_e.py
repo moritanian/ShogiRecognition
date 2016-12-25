@@ -5,13 +5,13 @@ import numpy as np
 from PIL import Image
 import glob
 import os.path
-from scipy import ndimage
+#from scipy import ndimage
 import cv2
 import copy
-import matplotlib.pyplot as plt
-from scipy import dot, roll
+#import matplotlib.pyplot as plt
+#from scipy import dot, roll
 
-import chain_recog
+#import chain_recog
 import DNN
 import apery_call
 import WWW

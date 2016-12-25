@@ -5,14 +5,9 @@ import numpy as np
 from PIL import Image
 import glob
 import os.path
-from scipy import ndimage
 import cv2
 import copy
-#import matplotlib.pyplot as plt
-#from scipy import dot, roll
 import random
-
-import chain_recog
 import DNN
 import square_space
 import pickle
