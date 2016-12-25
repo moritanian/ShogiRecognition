@@ -25,6 +25,7 @@ import threading
 import sys
 import datetime
 import time
+import inspect
 
 from server import main_sock 
 
@@ -46,6 +47,7 @@ NGIN = 12
 UMA = 13
 RYU = 14
 
+
 # 盤面管理
 # ゲーム上のルールを管理する
 # 認識処理は入らないようにする
@@ -56,6 +58,7 @@ class BanMatrix:
 		self.log_obj = log_obj
 
 		self.img = img
+		self.edge_abspos = []
 		self.__capture = [[],[]] # 持ち駒 # capture[0] 先手 駒一つにつきpushする
 								# 配列にするのあまりイケてない気が.. どう管理するのがいい？少なくとも外部からは隠ぺいすべき
 		self.masu_data = []
@@ -425,8 +428,19 @@ class Kihu:
 			"create_time" : self.create_time 
 		}
 
-		print post_data
-		print WWW.Post(end_point, post_data)
+		global log_obj 
+		log_obj.log(str(post_data))
+		ret = WWW.Post(end_point, post_data)
+		if(log_obj.main_socket()):
+			status = 0
+			if(ret):
+				status = 1
+			log_obj.main_socket().set_info_status(status, node_id = 2)
+		
+		if(ret):
+			log_obj.log(ret)
+		else:
+			log_obj.warning("server post err")
 
 
 
@@ -488,12 +502,21 @@ class PlayFlow:
 		crt_time = now.strftime("%Y/%m/%d %H:%M:%S")
 		end_point = URL + "api/game/0/start" 
 		ret = WWW.Post(end_point, {"start_time": crt_time})
-		if not(ret['result']):
+		if ret == None: # サーバアクセスできない
+			self.game_id = 0 # デフォルト0にする
+
+		elif not(ret['result']):
 			print "Send Err !!!!!!"
 			exit()
-
-		self.game_id = ret['game_id']
+		else:
+			self.game_id = ret['game_id']
 		print "game_id = " + str(self.game_id)
+
+		if(self.log_obj.main_socket()):
+			status = 0
+			if(ret):
+				status = 1
+			log_obj.main_socket().set_info_status(status, node_id = 2)
 
 		self.koma_recognition = koma_recognition.KomaRecognition(is_learning = False,  log_obj = self.log_obj.copy_obj(12))
 
@@ -502,6 +525,7 @@ class PlayFlow:
 		self.__capture_path = "server/capture.jpg"
 		self.__capture_count = 18
 		self.newest_ban_matrix = None
+		self.advanced_img = None
 
 
 
@@ -542,32 +566,41 @@ class PlayFlow:
 			#ban_matrix.print_ban(over_write = False)
 			self.newest_ban_matrix = ban_matrix
 
-			# 前の局面と比較
-			ret = self.judge_two_ban_matrix(self.crt_ban_matrix, ban_matrix)
-			if not(ret['err'] == ""):
-				print ret['err'].decode('utf-8') 
 
-			else:
-				self.__capture_count += 1
-				if(self.__capture_count == 20):
+			if(self.advanced_img):
+				ans = self.koma_recognition.judge_img_diff(self.advanced_img, self.newest_ban_matrix)
+			if(not(self.advanced_img) or ans["result"]):
 
-					#self.__capture_count = 0
+				# 前の局面と比較
+				ret = self.judge_two_ban_matrix(self.crt_ban_matrix, ban_matrix)
+				if not(ret['err'] == ""):
+					print ret['err'].decode('utf-8') 
+
+				else:
+					self.__capture_count += 1
+					if(self.__capture_count == 20):
+
+						#self.__capture_count = 0
+						ban_matrix.img.save(self.__capture_path)
+						self.advanced_img = ban_matrix.img
+
+	 			#print ret
+				if ret['result'] == 1 and ret['changed'] == 1:
+					# 手を進める
 					ban_matrix.img.save(self.__capture_path)
-					print "cap"
+					self.advanced_img = ban_matrix.img
 
- 			#print ret
-			if ret['result'] == 1 and ret['changed'] == 1:
-				# 手を進める
-				ban_matrix.img.save(self.__capture_path)
-				self.__capture_count = 0
+					self.__capture_count = 0
 
-				self.flow_advance(ret['kihu'])
-				self.log_obj.log( "epoch: " + str(self.epoch))
-				self.log_obj.log(ret['kihu'].get_txt(utf8 = True))
-				self.crt_ban_matrix.print_ban()
+					self.flow_advance(ret['kihu'])
+					self.log_obj.log( "epoch: " + str(self.epoch))
+					self.log_obj.log(ret['kihu'].get_txt(utf8 = True))
+					self.crt_ban_matrix.print_ban()
 
-				if self.is_learn:
-					self.koma_recognition.set_from_banmatrix(ban_matrix, self.crt_ban_matrix)
+					if self.is_learn:
+						self.koma_recognition.set_from_banmatrix(ban_matrix, self.crt_ban_matrix)
+
+			
 
 		else:
 			self.log_obj.log("board recognition err")
@@ -844,8 +877,8 @@ class PlayFlow:
 		# 既に進んでいる場合、局面をaperyオブジェクトに渡す
 		for kihu in self.kihus:
 			self.apery.move_board(kihu.get_usi())
-		if(self.log_obj and self.log_obj.main_socket):
-			self.log_obj.main_socket.set_info_status(1, node_id = 8)
+		if(self.log_obj and self.log_obj.main_socket()):
+			self.log_obj.main_socket().set_info_status(1, node_id = 8)
 
 	def get_apery_ans(self, by_wroom = False):
 		ans = self.apery.get_answer()
@@ -855,8 +888,7 @@ class PlayFlow:
 			kihu.target = self.crt_ban_matrix.get_koma(kihu.prev_pos[0], kihu.prev_pos[1])
 		
 		if(by_wroom): # deviceのさす位置を推定し、あっているか判定
-			advanced_img =  Image.open(self.__capture_path)
-			pointed_pos = self.koma_recognition.get_pointed_pos(advanced_img, self.newest_ban_matrix)
+			pointed_pos = self.koma_recognition.get_pointed_pos(self.advanced_img, self.newest_ban_matrix)
 			if(pointed_pos):
 				self.log_obj.log("your point is " + str(pointed_pos[0]) + str(pointed_pos[1]) ,3)
 				print kihu.next_pos
@@ -1012,22 +1044,47 @@ def test():
 
 class LogObj:
 	def __init__(self, main_socket = None):
-		self.main_socket = main_socket
+
+		self.__main_sockets = [main_socket]
 		self.default_node_id = 4
 
 	def log(self, line, node_id = 0):
 		if node_id == 0:
 			node_id = self.default_node_id
 		print line
-		if(self.main_socket):
-			self.main_socket.push_info_lines(line, node_id)
+		if(self.__main_sockets[0]):
+			self.__main_sockets[0].push_info_lines(line, node_id)
+
+	def warning(self, line, node_id = 0):
+		if node_id == 0:
+			node_id = self.default_node_id
+		locat = self.location(1)
+		warn = line + " [:warning in " + str(locat) + " ]" 
+		print warn
+		if(self.__main_sockets[0]):
+			self.__main_sockets[0].push_info_lines(warn, node_id)
 
 	def copy_obj(self, default_id = 4):
-		_copy_obj =  LogObj(self.main_socket)
+		_copy_obj =  LogObj()
+		_copy_obj._set_main_socket(self.__main_sockets)
 		_copy_obj.default_node_id = default_id
 		return _copy_obj
 
+	def main_socket(self):
+		return self.__main_sockets[0]
+
+	def set_main_socket(self, main_socket):
+		self.__main_sockets[0] = main_socket
+
+	def _set_main_socket(self, main_sockets):
+		self.__main_sockets = main_sockets
+
+	def location(self, depth=0):
+		frame = inspect.currentframe(depth+1)
+		return (frame.f_code.co_filename, frame.f_lineno)
+
 def main():
+	global log_obj
 	main_socket = None
 	apery = None
 	wroom = None
@@ -1075,7 +1132,7 @@ def main():
 		elif key == ord("m"): # main socket
 			if(not(main_socket)):
 				main_socket = main_sock.main()
-				log_obj.main_socket = main_socket
+				log_obj.set_main_socket(main_socket)
 				log_obj.log("main_socket", 4)
 
 		elif key == ord("w") or panel_node_id == 7:

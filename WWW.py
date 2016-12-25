@@ -4,17 +4,25 @@
 import urllib
 import json
 
-def Get(url, params = {}):
+def Get(url, params = {},  timeout=5):
 	url += "?{0}".format( urllib.urlencode( params))
-	localhost = urllib.urlopen(url)
+	try:
+		localhost = urllib.urlopen(url)
+	except  IOError:
+		print ("Get URL err!!")
+		return None
 	return  json.loads(localhost.read())
 
 
-def Post(url, params = {}):
+def Post(url, params = {},  timeout=5):
 	print url
 	params = urllib.urlencode(params)
 	print params
-	f = urllib.urlopen(url, params)
+	try:
+		f = urllib.urlopen(url, params)
+	except  IOError :
+		print ("POST URL err")
+		return None
 	json_str = f.read()
 	try:
    		ret = json.loads(json_str)

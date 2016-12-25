@@ -55,7 +55,7 @@ console.log("start");
     // サーバから状態の情報を定期的に取得
     function get_status(){
         var url =  '/cgi-bin/panel.py?get_status=1';
-        var node_ids = [3,4,5,7,8,10, 11,12]; // main からの応答がなくなった時にグレーアウトするノード
+        var node_ids = [2, 3,4,5,7,8,10, 11,12]; // main からの応答がなくなった時にグレーアウトするノード
         $.ajax({
             url: url,
             dataType: "jsonp",
@@ -276,8 +276,10 @@ console.log("start");
     });
 
     $("button.update-button").click(function(){
-        get_status();
-        console.log(node_list);
+        // 単にサーバへデータをアクセスするのではなくリロードする（サーバのノードがおちててもキャッシュから拾われるっぽい）
+        location.reload();
+        //get_status();
+        //console.log(node_list);
     })
 
     $("button.clear-log").click(function(){
@@ -431,8 +433,7 @@ console.log("start");
 
         </table>
       </div>
-      log
-      <button class="clear-log">clear</button>
+      <button class="clear-log">clear log</button>
       <div class="main-log">
         <div class="ban-capture">
             <img src="capture.jpg">

@@ -224,6 +224,7 @@
 button.clear-log {
 	width: 100px;
 	height: 30px;
+	margin: 10px;
 }
 
 .ban-capture img{
@@ -233,4 +234,20 @@ button.clear-log {
 
 .hidden {
 	display: none;
+}
+
+
+button {
+    background: -moz-linear-gradient(top,#BFD9E5, #3D95B7 50%,#0080B3 50%,#0099CC);
+    background: -webkit-gradient(linear, left top, left bottom, from(#97acb5), color-stop(0.5,#013a50), color-stop(0.5,#031d44), to(#006688));
+    color: #FFF;
+    border-radius: 4px;
+    -moz-border-radius: 4px;
+    -webkit-border-radius: 4px;
+    border: 1px solid #00384a;
+    -moz-box-shadow: 1px 1px 1px rgba(000,000,000,0.3),inset 0px 0px 3px rgba(255,255,255,0.5);
+    -webkit-box-shadow: 1px 1px 1px rgba(000,000,000,0.3),inset 0px 0px 3px rgba(255,255,255,0.5);
+    text-shadow: 0px 0px 3px rgba(0,0,0,0.5);
+    padding: 10px 0;
+
 }

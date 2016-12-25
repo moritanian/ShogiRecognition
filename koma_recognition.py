@@ -65,6 +65,8 @@ class KomaRecognition:
 
 		self.__row_ave = 0
 		self.__col_ave = 0
+		#row_ave: 42
+		#col_ave: 46
 
 	def get_probability(self, ban_matrix, pos, koma):
 		koma_abs = abs(koma)
@@ -360,9 +362,10 @@ class KomaRecognition:
 	def show_from_arr(self, arr):
 		Image.fromarray(arr.reshape([self.__col_ave, self.__row_ave]) * 255).show()
 
-	# device で指し示された場所取得
+	# device で指し示された場所取得 advanced_img:盤面を動かした際に認識した画像 
+	# newest_ban_mastrix:とりこまれた最新のmaxtrix(扇子「が含まれる想定)
 	def get_pointed_pos(self, advanced_img, newest_ban_matrix):
-		abspos = self.get_tip_abspos(advanced_img, newest_ban_matrix.img)
+		abspos = self.get_tip_abspos(advanced_img, newest_ban_matrix.img, newest_ban_matrix.edge_abspos)
 		
 		pos = None
 		print abspos
@@ -374,55 +377,222 @@ class KomaRecognition:
 				pos = [x,y]
 		return pos
 
-	def get_tip_abspos(self, back_img, img):
-		im = np.array(back_img.convert('L'))
-		im2 = np.array(img.convert('L'))
-		
-		im3 = im - im2
-		kernel = np.ones((16,16),np.uint8)
-		#im3 = cv2.erode(im3,kernel,iterations = 1)
-		#im3 = cv2.dilate(im3,kernel,iterations = 1) * 20
-		im3 = cv2.morphologyEx(im3, cv2.MORPH_OPEN, kernel)
-		im3 = cv2.morphologyEx(im3, cv2.MORPH_CLOSE, kernel)
-		im3 = im3 *10
+	# 盤面切り出し
+	def cut_img_from_matrix(self, img, edge_abspos):
+		ban_region = (edge_abspos[1], edge_abspos[0],  edge_abspos[1] + 9*self.__row_ave, edge_abspos[0] + 9*self.__col_ave)
+		im = img.crop(ban_region)
+		return im
 
-		path = "sample.jpg"
-		cv2.imwrite(path, im3)
-		
-		im3 = cv2.adaptiveThreshold(im3,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)
-		#im3 = cv2.morphologyEx(im3, cv2.MORPH_CLOSE, kernel)
-		#im3 = cv2.morphologyEx(im3, cv2.MORPH_CLOSE, kernel)
+	# canny による駒移動処理の前処理 差分での判定(cannyより重い気がするので、後処理のほうがいいかも)　手などの障害物が含まれる場合、ここではじく(駒移動判定しない)
+	def judge_img_diff(self, advanced_img, newest_ban_matrix):
+		ans = {"result" : True, "diff_masu": []}
+		im1 = self.cut_img_from_matrix(advanced_img, newest_ban_matrix.edge_abspos)
+		im2 = self.cut_img_from_matrix(newest_ban_matrix.img, newest_ban_matrix.edge_abspos)
+		diff_img ,  im_edge= self.bg_diff(im1, im2) # 差分抽出
+		nLabels, labelImage = cv2.connectedComponents(im_edge) # ラベリング
+
+		for i in range(nLabels  -1):
+			a = np.where(labelImage == i+1)
+			xs = np.array(a[0])
+			ys = np.array(a[1])
+			x_len = xs.max() - xs.min()
+			y_len = ys.max() - ys.min()
+			if(x_len > 150 or y_len > 150):
+				self.log_obj.warning("judge_ban len err", 3)
+				ans["result"] = False
+				print "nlabels = " + str(nLabels)
+				return ans
+			x = int(xs.mean()/ self.__col_ave)
+			y = int(ys.mean()/ self.__row_ave)
+			ans["diff_masu"].append([x, y])
+
+		return ans
+
+
+
+
+
+	# 扇子の先端位置取得
+	def get_tip_abspos(self, back_img, img, edge_abspos):
+			# 盤面範囲に分割
+		if(self.__row_ave == 0):
+			self.__row_ave = 42
+			self.__col_ave = 46
+		ban_region = (edge_abspos[1], edge_abspos[0],  edge_abspos[1] + 9*self.__row_ave, edge_abspos[0] + 9*self.__col_ave)
+		im = back_img.crop(ban_region)
+		im2 = img.crop(ban_region)
+
+		im3,  im_edge = self.bg_diff(im, im2)
 
 		find = np.where(im3 == 0)
-		size = find[0].size
+	
+		print edge_abspos
+
+		size = None
+		if find:
+			size = find[0].size
+		print ("size rate=" + str(size * 1.0 /(im3.shape[0] * im3.shape[1])))
+		print find
+		find[1][np.isnan(find[1])] = 0
+		find[0][np.isnan(find[0])] = 0
 		if(not(math.isnan(size)) and size):
 			y = int(find[1][0:size/100].mean())
 			x = int(find[0][0:size/100].mean())
 			
 			path = "sample.jpg"
 			cv2.circle(im3,(y, x),2,(0,0,255),3)
-			cv2.circle(im3,(30, 143),2,(0,0,255),3)
-			cv2.imwrite(path, im3)
 		else :
-			#path = "sample.jpg"
-			#cv2.imwrite(path, im3)
+			
 			return None
 		
-		return [x, y]
+		return [x + edge_abspos[0] , y + edge_abspos[1]]
 
+	def get_tip_abspos_old(self, back_img, img, edge_abspos):
+			# 盤面範囲に分割
+		if(self.__row_ave == 0):
+			self.__row_ave = 42
+			self.__col_ave = 46
+		ban_region = (edge_abspos[1], edge_abspos[0],  edge_abspos[1] + 9*self.__row_ave, edge_abspos[0] + 9*self.__col_ave)
+		im = back_img.crop(ban_region)
+		im2 = img.crop(ban_region)
+
+		self.bg_diff(im, im2)
+	
+		im = np.array(im.convert('L'))
+		im2 = np.array(im2.convert('L'))
+
+		im = cv2.Canny(im,80,180) # 10 170
+		im2 = cv2.Canny(im2,80,180) # 10 170
+
+		
+		im3 = im - im2
+		path = "sample.jpg"
+		#cv2.imwrite(path, im3)
+		
+		kernel = np.ones((3,3),np.uint8)
+		#im3 = cv2.erode(im3,kernel,iterations = 1)
+		#im3 = cv2.dilate(im3,kernel,iterations = 1) * 20
+		im3 = cv2.morphologyEx(im3, cv2.MORPH_OPEN, kernel)
+		#im3 = cv2.morphologyEx(im3, cv2.MORPH_CLOSE, kernel)
+		im3 = im3 *10
+
+		path = "sample.jpg"
+		#cv2.imwrite(path, im3)
+
+		#path = "sample.jpg"
+		#cv2.imwrite(path, im3)
+
+		im3 = cv2.adaptiveThreshold(im3,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)
+	
+		#im3 = cv2.morphologyEx(im3, cv2.MORPH_CLOSE, kernel)
+		#im3 = cv2.morphologyEx(im3, cv2.MORPH_CLOSE, kernel)
+
+		find = np.where(im3 == 0)
+		size = None
+		if find:
+			size = find[0].size
+		print ("size rate=" + str(size * 1.0 /(im3.shape[0] * im3.shape[1])))
+		print find
+		find[1][np.isnan(find[1])] = 0
+		find[0][np.isnan(find[0])] = 0
+		if(not(math.isnan(size)) and size):
+			y = int(find[1][0:size/100].mean())
+			x = int(find[0][0:size/100].mean())
+			
+			path = "sample.jpg"
+			cv2.circle(im3,(y, x),2,(0,0,255),3)
+			#self.labeling(im3)
+		
+			#cv2.circle(im3,(143, 30),2,(0,0,255),3)
+			#cv2.imwrite(path, im3)
+		else :
+			
+			return None
+		
+		return [x + edge_abspos[0] , y + edge_abspos[1]]
+
+	def labeling(self, img):
+		nLabels, labelImage = cv2.connectedComponents(img)
+		print "nlabels = " + str(nLabels)
+		colors = []
+		(height, width) = img.shape
+		for i in range(1, nLabels + 1):
+			colors.append(random.randint(0, 255))
+		for y in range(0, height):
+			for x in range(0, width):
+				if labelImage[y, x] > 0:
+					img[y, x] = colors[labelImage[y, x]]
+				else:
+					img[y, x] = 255
+		
+		for i in range(nLabels  -1):
+			a = np.where(labelImage == i+1)
+			xs = np.array(a[0])
+			ys = np.array(a[1])
+			x_len = xs.max() - xs.min()
+			y_len = ys.max() - ys.min()
+			if(x_len > 150 or y_len > 150):
+				continue
+			x = int(xs.mean())
+
+			y = int(ys.mean())
+			cv2.circle(img,(y, x),2,(0,0,255),3)
+
+		path = "sample.jpg"
+		cv2.imwrite(path, img)
+
+
+	def bg_diff(self, im, im2):
+		im = np.array(im.convert('L'))
+		im2 = np.array(im2.convert('L'))
+		diff = cv2.absdiff(im,im2)
+		# 差分が閾値より小さければTrue
+		th = 20
+		blur = 7
+		mask = diff < th
+		# 配列（画像）の高さ・幅
+		hight = im.shape[0]
+		width = im2.shape[1]
+		# 背景画像と同じサイズの配列生成
+		im_mask = np.zeros((hight,width),np.uint8)
+		# Trueの部分（背景）は白塗り
+		im_mask[mask]=255
+		# ゴマ塩ノイズ除去
+		im_mask = cv2.medianBlur(im_mask,blur)
+
+		# closing opening
+		kernel = np.ones((10,10),np.uint8)
+	
+		im_mask = cv2.morphologyEx(im_mask, cv2.MORPH_CLOSE, kernel)
+		im_mask = cv2.morphologyEx(im_mask, cv2.MORPH_OPEN, kernel)
+		# エッジ検出
+		im_edge = cv2.Canny(im_mask,100,200)
+
+		#path = "sample.jpg"
+		#cv2.imwrite(path, im_mask)
+		return im_mask, im_edge
 
 
 
 
 if False:
 	from PIL import Image
-	imc = Image.open("sample105.jpg")
-	im = np.array(imc.convert('L'))
+	im = Image.open("sample105.jpg")
 
-	imc2 = Image.open("sample106.jpg")
-	im2 = np.array(imc2.convert('L'))
+	im2 = Image.open("sample106.jpg")
 
-	KomaRecognition().get_tip_abspos(im, im2)
+	#KomaRecognition().get_tip_abspos(im, im2, [28, 144])
+	rec = KomaRecognition()
+	im3,  im_edge = rec.bg_diff(im, im2)
+	rec.labeling(im_edge)
+
+
+	if False:
+		path = "sample.jpg"
+		ban_region = (0,0, 100,200)
+		im3 = im2.crop(ban_region)
+		cv2.imwrite(path, np.array(im3))
+		
 
 if False:
 	img = cv2.imread('sample105.jpg',0)
