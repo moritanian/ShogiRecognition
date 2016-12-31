@@ -69,6 +69,38 @@ class BanMatrix:
 				y_dat.append(masu)
 			self.masu_data.append(y_dat)
 
+	def set_init_placement(self):
+		self.set_koma(0,0, -KYO)
+		self.set_koma(0,1, -KEI)
+		self.set_koma(0,2, -GIN)
+		self.set_koma(0,3, -KIN)
+		self.set_koma(0,4, -OHO)
+		self.set_koma(0,5, -KIN)
+		self.set_koma(0,6, -GIN)
+		self.set_koma(0,7, -KEI)
+		self.set_koma(0,8, -KYO)
+
+		self.set_koma(8,0, KYO)
+		self.set_koma(8,1, KEI)
+		self.set_koma(8,2, GIN)
+		self.set_koma(8,3, KIN)
+		self.set_koma(8,4, OHO)
+		self.set_koma(8,5, KIN)
+		self.set_koma(8,6, GIN)
+		self.set_koma(8,7, KEI)
+		self.set_koma(8,8, KYO)
+
+		self.set_koma(1,1, -HIS)
+		self.set_koma(1,7, -KAK)
+		self.set_koma(7,1, KAK)
+		self.set_koma(7,7, HIS)
+
+
+		for i in range(9):
+			self.set_koma(2,i, -HU)
+			self.set_koma(6,i, HU)
+
+
 	def set_koma(self, x, y , koma):
 		self.masu_data[x][y].koma = koma
 		self.masu_data[x][y].is_koma = False if koma == 0 else True
@@ -518,35 +550,7 @@ class PlayFlow:
 
 		self.thred_time = 0.1
 
-		self.crt_ban_matrix.set_koma(0,0, -KYO)
-		self.crt_ban_matrix.set_koma(0,1, -KEI)
-		self.crt_ban_matrix.set_koma(0,2, -GIN)
-		self.crt_ban_matrix.set_koma(0,3, -KIN)
-		self.crt_ban_matrix.set_koma(0,4, -OHO)
-		self.crt_ban_matrix.set_koma(0,5, -KIN)
-		self.crt_ban_matrix.set_koma(0,6, -GIN)
-		self.crt_ban_matrix.set_koma(0,7, -KEI)
-		self.crt_ban_matrix.set_koma(0,8, -KYO)
-
-		self.crt_ban_matrix.set_koma(8,0, KYO)
-		self.crt_ban_matrix.set_koma(8,1, KEI)
-		self.crt_ban_matrix.set_koma(8,2, GIN)
-		self.crt_ban_matrix.set_koma(8,3, KIN)
-		self.crt_ban_matrix.set_koma(8,4, OHO)
-		self.crt_ban_matrix.set_koma(8,5, KIN)
-		self.crt_ban_matrix.set_koma(8,6, GIN)
-		self.crt_ban_matrix.set_koma(8,7, KEI)
-		self.crt_ban_matrix.set_koma(8,8, KYO)
-
-		self.crt_ban_matrix.set_koma(1,1, -HIS)
-		self.crt_ban_matrix.set_koma(1,7, -KAK)
-		self.crt_ban_matrix.set_koma(7,1, KAK)
-		self.crt_ban_matrix.set_koma(7,7, HIS)
-
-
-		for i in range(9):
-			self.crt_ban_matrix.set_koma(2,i, -HU)
-			self.crt_ban_matrix.set_koma(6,i, HU)
+		self.crt_ban_matrix.set_init_placement()
 
 		self.crt_ban_matrix.print_ban()
 
@@ -1045,6 +1049,205 @@ def make_data():
 
 	return {'x_data': x_data, 'y_data': y_data}
 
+# 独立に先後学習する (できるだけ既存のクラス、メソッドをしよう)
+def sengo_test():
+	komaRecognition = koma_recognition.KomaRecognition(is_learning = False)
+
+
+	m_files = range(3)
+	t_files = [3]
+	learnW = None
+
+	l_data_list = []
+	t_data_list = []
+
+	for i in m_files:
+		im = Image.open("images/init_ban" + str(i) + ".jpg")
+		ban_matrix = BanMatrix(im)
+		
+		ret = komaRecognition.set_masu_from_one_pic(ban_matrix)
+		ban_matrix.set_init_placement()
+
+		if(ret):
+			for x in range(9):
+				for y in range(9):
+					target = ban_matrix.get_koma(x,y)
+					abs_target = abs(target)
+					l_data = []
+					if(target > 0):
+						l_data.append(1)
+						l_data.append(ban_matrix.get_masu(x,y).snippet_img_arr)
+						l_data_list.append(l_data)
+
+					elif(target < 0):
+						l_data.append(0)
+						l_data.append(ban_matrix.get_masu(x,y).snippet_img_arr)
+						#l_data.append(komaRecognition.inverse_img_arr(ban_matrix.get_masu(x,y).snippet_img_arr))
+						l_data_list.append(l_data)
+					
+		else:
+			print "waring set masu img"
+
+	for i in t_files:
+		im = Image.open("images/init_ban" + str(i) + ".jpg")
+		ban_matrix = BanMatrix(im)
+		ret = komaRecognition.set_masu_from_one_pic(ban_matrix)
+		ban_matrix.set_init_placement()
+		if(ret):
+			for x in range(9):
+				for y in range(9):
+					target = ban_matrix.get_koma(x,y)
+					abs_target = abs(target)
+					t_data = []
+					if(target > 0):
+						t_data.append(1)
+						t_data.append(ban_matrix.get_masu(x,y).snippet_img_arr)
+						t_data_list.append(t_data)
+						
+					elif(target < 0):
+						t_data.append(0)
+						t_data.append(ban_matrix.get_masu(x,y).snippet_img_arr)
+						#t_data.append(komaRecognition.inverse_img_arr(ban_matrix.get_masu(x,y).snippet_img_arr))
+						t_data_list.append(t_data)
+
+					
+		else:
+			print "waring set masu img"
+
+	max_epoch = 20
+	for i in xrange(max_epoch):
+		err_ave = 0.0
+		for l_data in l_data_list:
+			(err, learnW) = DNN.batch_learn(learnW, l_data[1], l_data[0])	
+			err_ave += err
+			#print err
+		err_ave /= len(l_data_list)
+		print "       err= " + str(err_ave)
+	# test
+	success = 0
+	index = 0
+	for t_data in t_data_list:
+		ret = DNN.recog(learnW, t_data[1], [t_data[0]])
+		if ret["success"] == 1:
+			success += 1
+		index += 1
+	# result
+	print str(success) + "/" + str(index)
+
+# 独立に学習する (できるだけ既存のクラス、メソッドをしよう)
+# 歩の場合、6files 係数0.2~0.3で9割が限界？
+def koma_test(koma = 4):
+	komaRecognition = koma_recognition.KomaRecognition(is_learning = False)
+	m_files = range(18)
+	t_files = [18,19]
+	learnW = None
+
+	l_data_list = []
+	t_data_list = []
+
+	for i in m_files:
+		im = Image.open("images/init_ban" + str(i) + ".jpg")
+		ban_matrix = BanMatrix(im)
+		
+		ret = komaRecognition.set_masu_from_one_pic(ban_matrix)
+		ban_matrix.set_init_placement()
+		xs = [0,6,7,8]
+		ys = [0,2,6,8]
+
+		if(ret):
+			for x in xs:
+				for y in ys:
+					target = ban_matrix.get_koma(x,y)
+					if(target ==0 or ban_matrix.get_masu(x,y).snippet_img_arr is None):
+						continue
+					abs_target = abs(target)
+					l_data = []
+					if(target > 0):
+						img = ban_matrix.get_masu(x,y).snippet_img_arr
+					else:
+						img = komaRecognition.inverse_img_arr(ban_matrix.get_masu(x,y).snippet_img_arr)
+
+					if(img.shape[0] == 0):
+						print "aaa"
+						print x
+						print y
+
+					if(abs_target == koma):
+						l_data.append(1)
+						l_data.append(img)
+						l_data_list.append(l_data)
+
+					else:
+						l_data.append(0)
+						l_data.append(img)
+						l_data_list.append(l_data)
+			print img.shape
+					
+		else:
+			print "waring set masu img"
+
+	for i in t_files:
+		im = Image.open("images/init_ban" + str(i) + ".jpg")
+		ban_matrix = BanMatrix(im)
+		ret = komaRecognition.set_masu_from_one_pic(ban_matrix)
+		ban_matrix.set_init_placement()
+		if(ret):
+			for x in xs:
+				for y in ys:
+					target = ban_matrix.get_koma(x,y)
+					if(target ==0 or ban_matrix.get_masu(x,y).snippet_img_arr is None):
+						continue
+					abs_target = abs(target)
+			
+					t_data = []
+					if(target > 0):
+						img = ban_matrix.get_masu(x,y).snippet_img_arr
+					else:
+						img = komaRecognition.inverse_img_arr(ban_matrix.get_masu(x,y).snippet_img_arr)
+
+					if(img.shape[0] == 0):
+						print "aaa"
+						print x
+						print y
+
+					if(abs_target == koma):
+						t_data.append(1)
+						print (x,y)
+					elif (target != 0):
+						t_data.append(0)
+					t_data.append(img)
+					t_data_list.append(t_data)
+
+					
+		else:
+			print "waring set masu img"
+
+	max_epoch =15
+	for i in xrange(max_epoch):
+		err_ave = 0.0
+		for l_data in l_data_list:
+			(err, learnW) = DNN.batch_learn(learnW, l_data[1], l_data[0])	
+			err_ave += err
+			#print err
+		err_ave /= len(l_data_list)
+		print "       err= " + str(err_ave)
+
+		# test
+		success = 0
+		index = 0
+		for t_data in t_data_list:
+			ret = DNN.recog(learnW, t_data[1], [t_data[0]])
+			if ret["success"] == 1:
+				success += 1
+			index += 1
+		# result
+		print str(success) + "/" + str(index)
+
+
+
+
+
+
 
 
 def test():
@@ -1095,6 +1298,8 @@ def test():
 
 #im = Image.open("init_ban1.jpg")
 #recog_one_ban(im)
+
+
 
 # print をラップする
 
@@ -1211,7 +1416,9 @@ def main():
 	print "successfully ended"
 
 if __name__ == '__main__':
-	main()
+	#main()
+	#sengo_test()
+	koma_test()
 
 
 

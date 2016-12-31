@@ -60,6 +60,10 @@ class KomaRecognition:
 
 		self.__row_ave = 0
 		self.__col_ave = 0
+
+		self.__piece_width_ave = 0
+
+		self.__save_image_num = 0
 		#row_ave: 42
 		#col_ave: 46
 
@@ -188,8 +192,10 @@ class KomaRecognition:
 		else:
 			self.snippet_img_arrs[abs_target - 1].append( img_arr)
 
+	# 注意！！！　masuデータ上書きされる
+	# 学習用に masu.snippet_img_arr を保存、　その画像の1/4サイズでこまの有り無し判定
 	def set_masu_from_one_pic(self, ban_matrix):
-		img = ban_matrix.img
+		img = copy.copy(ban_matrix.img)
 		im = np.array(img.convert('L'))
 		frame = cv2.Canny(im,80,180) # 10 170
 		#frame = cv2.convertScaleAbs(cv2.Laplacian(im, cv2.CV_32F, 8))
@@ -199,7 +205,18 @@ class KomaRecognition:
 		line_list = self.get_line_list(im2)
 		if line_list == []:
 			return 0
+		## 危険な書き換え
+		#im2 = cv2.adaptiveThreshold(np.array(im),255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)
+		#Image.fromarray(im2).show()
+		#kernel = np.ones((2,2),np.uint8)
+		#im2 = cv2.morphologyEx(im2, cv2.MORPH_CLOSE, kernel)
+		#im2 = cv2.morphologyEx(im2, cv2.MORPH_OPEN, kernel)
+		
+		##
+
 		img_list = self.devide_img(im2, line_list)
+
+	
 		#Image.fromarray(add_line(im2, line_list)).show()
 		ban_matrix.edge_abspos = [line_list[1][1] - self.__col_ave, line_list[0][1] - self.__row_ave]
 
@@ -210,10 +227,18 @@ class KomaRecognition:
 				masu = square_space.Masu(x, y , r_img, 0, s_img_pos)
 				#img = self.max_pooling(r_img)
 				img = r_img
-				if(self.flg == 0):
-					Image.fromarray(self.inverse_img(img)).show()
-					self.flg = 1
-				masu.snippet_img_arr = self.convert_arr_from_img(img)/255
+				#img = cv2.adaptiveThreshold(img,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)
+				#img = self.max_pooling(img)
+				self.flg += 1
+				xt = 7
+				yt = 9
+				if(self.flg == (xt -1) * 9 + yt):			
+
+					Image.fromarray(img).show()
+					
+				cut_img = self.cut_along_edge_lines(img)
+				if(not(cut_img is None)):
+					masu.snippet_img_arr = self.convert_arr_from_img(cut_img)/255
 				masu.is_koma = self.is_koma(self.max_pooling(r_img)/255)
 				ban_matrix.masu_data[x][y] = masu
 		return 1
@@ -233,6 +258,9 @@ class KomaRecognition:
 			old = col
 
 		return c_img
+
+	def draw_frame(self, img, start, goal, wid = 1):
+		return cv2.rectangle(img,(start[0], start[1]),(goal[0],goal[1]),(0,255,0),wid)
 
 
 	def get_line_list(self, img):
@@ -320,18 +348,19 @@ class KomaRecognition:
 		
 		# 最初と最後のラインは盤の外枠の線にずれる可能性があるので除外
 		if(self.__row_ave ==0 or self.__col_ave == 0):
-			self.__col_ave = (line_list[1][-2] - line_list[1][1])/7
-			self.__row_ave =  (line_list[0][-2] - line_list[0][1])/7
+			self.__col_ave = (line_list[1][-2] - line_list[1][1])/7.0
+			self.__row_ave =  (line_list[0][-2] - line_list[0][1])/7.0
 
-			self.log_obj.log("row_ave: " + str(self.__row_ave), 3)
-			self.log_obj.log("col_ave: " + str(self.__col_ave), 3)
+			if(self.log_obj):
+				self.log_obj.log("row_ave: " + str(self.__row_ave), 3)
+				self.log_obj.log("col_ave: " + str(self.__col_ave), 3)
 
 
 		img_list = []
 		for col in range(9):
 			row_list = []
 			for row in range(9):
-				div_img = copy.copy(img[line_list[1][col]:line_list[1][col] + self.__col_ave, line_list[0][row]: line_list[0][row] + self.__row_ave])
+				div_img = copy.copy(img[line_list[1][col]:line_list[1][col] + int(self.__col_ave), line_list[0][row]: line_list[0][row] + int(self.__row_ave)])
 				row_list.append(div_img)
 
 			img_list.append(row_list)
@@ -348,7 +377,7 @@ class KomaRecognition:
 		trim_size = 4
 		#img_arr2 = copy.copy(img_arr.reshape([self.__col_ave/2, self.__row_ave/2]))
 		img_arr2 = img_arr
-		img_arr2 = img_arr2[trim_size:self.__col_ave/2 - trim_size, trim_size:self.__row_ave/2 - trim_size]
+		img_arr2 = img_arr2[trim_size:int(self.__col_ave/2) - trim_size, trim_size:int(self.__row_ave/2) - trim_size]
 		#print np.mean(img_arr2)
 		if(np.mean(img_arr2) < 0.3):
 			return False
@@ -408,6 +437,7 @@ class KomaRecognition:
 
 
 	# 扇子の先端位置取得
+	# 差分を利用
 	def get_tip_abspos(self, back_img, img, edge_abspos):
 			# 盤面範囲に分割
 		if(self.__row_ave == 0):
@@ -567,8 +597,278 @@ class KomaRecognition:
 		#cv2.imwrite(path, im_mask)
 		return im_mask, im_edge
 
+	# hough変換での直線抽出から駒の先後判定
+	def predict_sengo(self, ban_matrix, pos):
+		img = ban_matrix.get_masu(pos[0], pos[1]).snippet_img
+		ret = self._get_sengo_lines(img)
+		prob = ret[1]
+		
+		if(self.log_obj):
+			self.log_obj.log("predict sengo " + str(prob))
+		return prob
+
+	# 駒の端の直線に従って長方形に切り抜く
+	def cut_along_edge_lines(self, img):
+
+		[edge_lines,prob] = self.get_sengo_edge_lines(img)
+		if(prob == 0):
+			return None
+
+		piece_left = 0
+		self.__cut_width = 30
+		self.__cut_off = 4
+
+		
+		if(edge_lines[0] != []):
+			piece_left = self.__piece_left_from_left(edge_lines[0][0][0])
+			if(piece_left == -1):
+				if(edge_lines[1] != []):
+					piece_left = self.__piece_left_from_right(edge_lines[1][0][0])
+					if(piece_left == -1):
+						piece_left = 0
+				else:
+					piece_left = self.__row_ave - self.__cut_width
+		else:
+			piece_left = self.__piece_left_from_right(edge_lines[1][0][0])
+			if(piece_left == -1):
+				piece_left = 0
+
+		if(False):
+			if(edge_lines[0] != []):
+				if(edge_lines[0][0][0] + cut_off+ cut_width < self.__row_ave ):
+					piece_left = edge_lines[0][0][0] + cut_off
+				elif(edge_lines[1] != []):
+					piece_left = edge_lines[1][0][0] - cut_width - cut_off
+				else:
+					piece_left = self.__row_ave - cut_width
+			else:
+				if(edge_lines[1][0][0] - cut_width - cut_off > 0):
+					piece_left = edge_lines[1][0][0] - cut_width - cut_off
+				else:
+					piece_left = 0
+
+		start = [int(piece_left), self.__cut_off/2]
+		goal = [int(piece_left + self.__cut_width), int(self.__col_ave - self.__cut_off/2)]
+		cut_img = img[start[1]:goal[1], start[0]:goal[0]]
+
+		if(cut_img.shape[1] == 0):
+			self.save_image(img, "temp/err.jpg")
+			#print cut_img.shape
+			#print piece_left
+		return cut_img
+
+	# 駒領域の左端の計算式定義
+	# ただしマスのりょいういきからはみだしてはいけない
+	# 左右エッジのいずれからから求める式２つ
+	def __piece_left_from_left(self, edge_pos):
+		left = edge_pos + self.__cut_off
+		if(left + self.__cut_width >= self.__row_ave):
+			left = -1
+		return left
+
+	def __piece_left_from_right(self, edge_pos):
+		left = edge_pos - self.__cut_width - self.__cut_off
+		if(left <= 0):
+			left = -1
+		return left
 
 
+	# 駒の両端の二線
+	def get_sengo_edge_lines(self, img):
+		right_side = 0
+		left_side = 0
+		right_line= [0,0]
+		left_line = [0,0]
+		edge_lines = [[],[]]
+		[lines, prob] = self._get_sengo_lines(img)
+		if(prob ==0):
+			return [edge_lines,0]
+
+		for line in lines:
+			if(prob > 0): # 上で交わる
+				i_l = self.intersect_line_and_side_line(line[0], line[1], self.__col_ave)
+			elif(prob < 0):
+				i_l = self.intersect_line_and_side_line(line[0], line[1], 0)
+
+			if(i_l < left_side ): # 横境界と中央より左側で交わる
+				left_side = i_l
+				left_line = line
+			elif(right_side < i_l):
+				right_side = i_l
+				right_line = line
+
+			if(prob > 0): # 上で交わる
+				left_side_s = int(self.intersect_line_and_side_line(left_line[0], left_line[1], 0))
+				right_side_s = int(self.intersect_line_and_side_line(right_line[0], right_line[1], 0))
+						
+			elif(prob < 0):
+				left_side_s = int(self.intersect_line_and_side_line(left_line[0], left_line[1], self.__col_ave))
+				right_side_s = int(self.intersect_line_and_side_line(right_line[0], right_line[1], self.__col_ave))
+
+		if(left_side < 0):
+			edge_lines[0] = [[left_side + int(self.__row_ave/2), 0], [left_side_s + int(self.__row_ave/2), self.__col_ave]]
+		if(right_side > 0):
+			edge_lines[1] = [[right_side + int(self.__row_ave/2), 0], [right_side_s + int(self.__row_ave/2), self.__col_ave]]
+
+		return [edge_lines, prob]
+
+				
+
+
+	# 駒の両端の斜め線を取り出す（複数）
+	def _get_sengo_lines(self, img):
+		lines = cv2.HoughLines(img,1,np.pi/180,27) # 26
+		prob = 0
+		up_lines = [] # [[rho, theta], [] ..] # 上で交わる直線
+		down_lines = []
+		for line in lines:
+			for rho,theta in line:
+				if((np.pi * 45/180 < theta and  theta < np.pi *135 /180) or  theta == 0 or theta == np.pi/2 or theta == np.pi):
+					continue
+				l = self.intersect_line_and_center_line(rho, theta)
+				if( self.__row_ave/2 < l and l < self.__row_ave * 4): # 下で交わる
+					down_lines.append([rho, theta])
+					prob -= 1
+
+				elif(- 4*  self.__row_ave < l and l< -self.__row_ave/2):
+					up_lines.append([rho, theta])
+					prob += 1
+
+		if(prob == 0): # 先後判定できない
+			lines = []
+		elif(prob < 0):
+			lines = down_lines
+		else:
+			lines = up_lines
+		return [lines, prob]
+
+
+	# 極座標表記の直線と縦の中心線との交点の中心からの位置
+	def intersect_line_and_center_line(self, rho, theta):
+		return int(rho/np.sin(theta) - self.__row_ave/2.0/np.tan(theta) - self.__col_ave/2.0)
+
+	# 極座標表記の直線と、横の直線の交点位置
+	def intersect_line_and_side_line(self, rho, theta, side):
+		return int(-side*np.tan(theta) + rho/np.cos(theta) - self.__row_ave/2.0)
+
+	# 画像ファイル保存
+	# cv2 と PIL で配列の順序が違うのか,ＲＧＢが反転する
+	def save_image(self, img, path=""):
+		if(path == ""):
+			path = "temp/save_image" + str(self.__save_image_num) + ".jpg"
+			self.__save_image_num += 1
+		Image.fromarray(img).save(path)
+		#cv2.imwrite(path, img)
+
+	# こまの先後を判定するサンプル
+	def test_sample(self):
+		#img = Image.open("server/capture.jpg")
+		img = Image.open("./images/init_ban6.jpg")
+		img_ori = copy.copy(img)
+		im = np.array(img.convert('L'))
+		frame = cv2.Canny(im,80,180) # 10 170
+		#frame = cv2.convertScaleAbs(cv2.Laplacian(im, cv2.CV_32F, 8))
+
+		im2 = np.array(frame)
+		#Image.fromarray(im2).show()
+		line_list = self.get_line_list(im2)
+		if line_list == []:
+			exit()
+		## 危険な書き換え
+		#im2 = cv2.adaptiveThreshold(np.array(im),255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)
+		#Image.fromarray(im2).show()
+		#kernel = np.ones((2,2),np.uint8)
+		#im2 = cv2.morphologyEx(im2, cv2.MORPH_CLOSE, kernel)
+		#im2 = cv2.morphologyEx(im2, cv2.MORPH_OPEN, kernel)
+
+
+		img_list = self.devide_img(im2, line_list)
+
+		edge_abspos = [line_list[1][1] - int(self.__col_ave), line_list[0][1] - int(self.__row_ave)]
+
+		minLineLength = 100
+		maxLineGap = 10
+		lines = cv2.HoughLinesP(im2,1,np.pi/180,100,minLineLength,maxLineGap)
+		#print lines
+		arr_img = np.array(img)
+		#Image.fromarray(im2).show()
+		for i in lines:
+			for x1,y1,x2,y2 in i:
+				cv2.line(arr_img,(x1,y1),(x2,y2),(0,255,0),1)
+		#
+		cv2.imwrite('result.jpg',arr_img)
+
+		lines = cv2.HoughLines(im2,1,np.pi/180,200)
+		arr_img = np.array(img)
+
+		print self.__col_ave
+		print self.__row_ave
+
+		for line in lines:
+			for rho,theta in line:
+				a = np.cos(theta)
+				b = np.sin(theta)
+				x0 = a*rho
+				y0 = b*rho
+				x1 = int(x0 + 1000*(-b))
+				y1 = int(y0 + 1000*(a))
+				x2 = int(x0 - 1000*(-b))
+				y2 = int(y0 - 1000*(a))
+		
+				cv2.line(arr_img,(x1,y1),(x2,y2),(0,0,255),1)
+		cv2.imwrite('result2.jpg',arr_img)
+	
+		arr_img = np.array(img_ori)
+
+		for x in range(9):
+			print ("  " + str(x) + "=======")
+			for y in range(9):
+				
+
+				s_img_pos = [line_list[1][x], line_list[0][y]]
+				r_img = img_list[x][y]
+				masu = square_space.Masu(x, y , r_img, 0, s_img_pos)
+				img = r_img
+				self.flg += 1
+				if(True):
+					if(self.flg == 73):
+						self.save_image(self.cut_along_edge_lines(img))
+
+					[edge_lines,prob] = self.get_sengo_edge_lines( img)
+					if(prob == 0):
+						continue
+
+					x0 = int( edge_abspos[1] + (y ) * self.__row_ave)
+					if(prob > 0): # 上で交わる
+						y1 = int((x + 1)*(self.__col_ave) + edge_abspos[0])
+						y2 = int(x*(self.__col_ave) + edge_abspos[0])
+					elif(prob < 0):
+						y1 = int(x*(self.__col_ave) + edge_abspos[0])
+						y2 = int((x + 1)*(self.__col_ave) + edge_abspos[0])
+
+					if(edge_lines[0] != []):
+						cv2.line(arr_img,(x0 + edge_lines[0][0][0],y1),(x0 + edge_lines[0][1][0],y2),(0,0,200),1)
+					if(edge_lines[1] != []):
+						cv2.line(arr_img,(x0 + edge_lines[1][0][0],y1),(x0 + edge_lines[1][1][0],y2),(0,0,200),1)
+
+					piece_left = 0
+					cut_width = 30
+					cut_off = 4
+					if(edge_lines[0] != [] and edge_lines[0][0][0] + cut_width < self.__row_ave ):
+						piece_left = edge_lines[0][0][0] + cut_off
+					else:
+						piece_left = edge_lines[1][0][0] - cut_width - cut_off
+
+					start = [int(edge_abspos[1] + self.__row_ave*y + piece_left), int(edge_abspos[0] + self.__col_ave * x)]
+					goal = [int(edge_abspos[1] + self.__row_ave*y + piece_left + cut_width), int(edge_abspos[0] + self.__col_ave * (x +1) )]
+					self.draw_frame(arr_img, start, goal, wid = 1)
+
+					print prob
+					if(edge_lines[0] != [] and edge_lines[1]!= [] and edge_lines[1][0][0] - edge_lines[0][0][0] > self.__piece_width_ave):
+						self.__piece_width_ave = edge_lines[1][0][0] - edge_lines[0][0][0]
+		self.save_image(arr_img)
+		print self.__piece_width_ave
+							#
 
 if False:
 	from PIL import Image
@@ -609,3 +909,9 @@ if False:
 	cv2.imwrite('sample.jpg',cimg)
 
 
+
+	
+		 
+if __name__ == '__main__':
+	my_class = KomaRecognition()
+	my_class.test_sample()

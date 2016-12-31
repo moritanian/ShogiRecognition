@@ -13,7 +13,7 @@ import math
 #import import_cifar
 
 # global
-learn_weight = 0.014
+learn_weight = 0.2 #0.058
 sigmoid_a = 1.0
 is_sigmoid = 1
 layer_num = 3
@@ -21,7 +21,7 @@ layer_num = 3
 flg1 = 0
 img_s_flg = 0
 # 慣性項係数
-inerta_coef = 0.5
+inerta_coef = 0.2 # 0.6
 
 drop_rate = 0.5
 
@@ -103,6 +103,7 @@ def test(learn_data, test_data_set):
 	print "one_num: " + str(one_num)
 	print "errs = " + str(err_sum/ data_num) 
 
+# ans : 配列
 def recog(learn_data, input_data, ans, is_multi = 0):
 	result = forward_all(learn_data, input_data, is_multi)
 	err = calc_rss(result, ans)/len(ans)
@@ -179,6 +180,7 @@ def learn_m(x_data, y_data, class_num = 1, limit_err = 0.02, is_test = 1):
 	return learn_data
 
 # 外部から呼ばれる想定 バッチ学習　
+# x_data: img_arr , y_data : 0 or 1
 def batch_learn(learn_data, x_data, y_data):
 	global layer_num
 	if(learn_data == None): # はじめてよばれたとき、初期化する
@@ -192,7 +194,7 @@ def batch_learn(learn_data, x_data, y_data):
 			layers.append(layer)
 
 		i_learn_data['input_arr_size'] = x_data.size
-		hidden_size = i_learn_data['input_arr_size']
+		hidden_size = i_learn_data['input_arr_size']/100
 		init_learn_ws(layers, np.random.rand(hidden_size, i_learn_data['input_arr_size']+1) - 0.5 , 1) #/(input_data['input_arr_size'] +1)/100.0
 		init_learn_ws(layers, np.random.rand(1, hidden_size+1) - 0.5, 2) #/hidden_size/100.0
 

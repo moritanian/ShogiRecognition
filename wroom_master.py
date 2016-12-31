@@ -39,8 +39,8 @@ class WroomHost:
 		self.KIHU_MODE = 2
 		self.TEST_VOICE_MODE = 3
 
-		#self.mode = self.VOICE_MODE
-		self.mode = self.KIHU_MODE
+		self.mode = self.VOICE_MODE
+		#self.mode = self.KIHU_MODE
 		#self.mode = self.TEST_VOICE_MODE
 		
 		self.voice_size = 1024
@@ -48,8 +48,8 @@ class WroomHost:
 		self.test_hz = 100
 
 		self.__end_f = False
-		self.bind_ip = ''
-		self.bind_ip = socket.gethostbyname(socket.gethostname())
+		self.bind_ip = '192.168.179.6' # 下記が使えない場合は指定するしかなさそう
+		#self.bind_ip = socket.gethostbyname(socket.gethostname())
 
 		self.bind_port = 9999
 
@@ -66,10 +66,14 @@ class WroomHost:
 		if(self.log_obj):
 			self.log_obj.log("wroom master start")
 			self.log_obj.log('[*]Listening on %s:%d' % (self.bind_ip,self.bind_port))
+		else:
+			print('[*]Listening on %s:%d' % (self.bind_ip,self.bind_port))
 
 		client_handler = threading.Thread(target=self.server_work)
 		 
 		client_handler.start()
+
+		self.is_stand_alone = False
 
 
 		
@@ -94,6 +98,8 @@ class WroomHost:
 			#bind済みのソケットから、新たなソケットと接続先のアドレスを返す。
 			if(self.log_obj):
 				self.log_obj.log('[*] Accepted connectoin from: %s:%d' % (addr[0],addr[1]))
+			else:
+				print('[*]Listening on %s:%d' % (self.bind_ip,self.bind_port))
 			client_handler = threading.Thread(target=self.handle_client,args=(client,))
 			# threadingを使って、スレッドを生成する。マルチコアに対応させたい場合は,multiprocessingを使えば良い。
 			# targetは呼び出す関数(オブジェクト)を指定し、argsはその引数を指定している。
@@ -109,33 +115,54 @@ class WroomHost:
 
 		if(self.log_obj):
 			self.log_obj.log( str('[*] Recived: %s' % request))
+		else:
+			print(str('[*] Recived: %s' % request))
 		#client_socket.send(("Hallo Client!!!\n").encode('utf-8'))
 
 		if(request[0:4] == self.init_cmd):
 			client_socket.send(self.config_cmd + "config") # TODO set config params 
 			if(self.log_obj):
 				self.log_obj.log("send config")
+			else:
+				print("send config")
 
 			while(not(self.__end_f)):
 				request = client_socket.recv(bufsize)
 				if(self.log_obj):
 					self.log_obj.log (str('[*] while : %s' % request))
+				else:
+					print(str('[*] while : %s' % request))
+
 				if(request[0:4] == self.ask_cmd):
 					if(self.log_obj):
 						self.log_obj.log("ask cmd")
+					else:
+						print("ask command")
+					
 					if(self.mode == self.KIHU_MODE): # bibe info
 						if(self.log_obj):
 							self.log_obj.log("send kihu")
-						kihu = self.get_ans_lambda( by_wroom = True)
-						bibe = "0"
-						if(kihu.is_pointed_good):
+						else:
+							print ("send kihu")
+
+						if(self.is_stand_alone):
 							bibe = "1"
+						else:	
+							kihu = self.get_ans_lambda( by_wroom = True)
+							bibe = "0"
+							if(kihu.is_pointed_good):
+								bibe = "1"
+
 						client_socket.send(self.kihu_cmd + bibe)
 						
 					
 					elif(self.mode == self.VOICE_MODE):  # voice send
-						kihu = self.get_ans_lambda()
-						text = "..私は、 " + kihu.get_voice_txt() + " がいいと思います。.."
+						if(self.is_stand_alone):
+							text = "..私は、  いち　いち　かく　成る がいいと思います。.."
+						else:
+							kihu = self.get_ans_lambda()
+							text = "..私は、 " + kihu.get_voice_txt() + " がいいと思います。.."
+						
 						self.voice_path = synceAPI.request_API(text)
 						#self.voice_path = "tatta2.wav"
 						audioS = send_audio.AudioSender(self.voice_path)
@@ -184,7 +211,8 @@ class WroomHost:
 		print ("closed connection")
 
 if __name__ == '__main__':
-	WroomHost(None)
+	host = WroomHost(None)
+	host.is_stand_alone = True # 別モジュールなしで動かす
 	while(True):
 			s1 = raw_input()      
 			if(s1 == "q"):
