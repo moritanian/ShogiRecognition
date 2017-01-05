@@ -13,7 +13,7 @@ import math
 #import import_cifar
 
 # global
-learn_weight = 0.2 #0.058
+learn_weight = 0.2 #0.058 # 0.2
 sigmoid_a = 1.0
 is_sigmoid = 1
 layer_num = 3
@@ -194,7 +194,7 @@ def batch_learn(learn_data, x_data, y_data):
 			layers.append(layer)
 
 		i_learn_data['input_arr_size'] = x_data.size
-		hidden_size = i_learn_data['input_arr_size']/100
+		hidden_size = i_learn_data['input_arr_size']/10 #100
 		init_learn_ws(layers, np.random.rand(hidden_size, i_learn_data['input_arr_size']+1) - 0.5 , 1) #/(input_data['input_arr_size'] +1)/100.0
 		init_learn_ws(layers, np.random.rand(1, hidden_size+1) - 0.5, 2) #/hidden_size/100.0
 

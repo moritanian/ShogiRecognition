@@ -766,9 +766,9 @@ class PlayFlow:
 				
 				elif(len(movable_cap_list) > 0):
 					for cap_pos in movable_cap_list:
-						probab = self.get_koma_probability(ban2, cap_pos, target, is_sengo_only = True) * self.teban # teban かけているのは、後手の場合、後手の駒である確からしさにするため
-						if probab > max_probab:
-							max_probab = probab
+						pred_sengo = self.koma_recognition.predict_sengo(ban2, cap_pos) # 値は＋－にふれる　＃見方の駒のうち、絶対値最大のものを進んだ地点とする
+						if(max_probab < abs(pred_sengo) and self.teban * pred_sengo > 0):
+							max_probab = abs(pred_sengo)
 							next_pos = cap_pos
 					
 					kihu = Kihu(self.teban, self.epoch + 1, target, dif_list[0], next_pos)
@@ -1049,104 +1049,25 @@ def make_data():
 
 	return {'x_data': x_data, 'y_data': y_data}
 
-# 独立に先後学習する (できるだけ既存のクラス、メソッドをしよう)
-def sengo_test():
-	komaRecognition = koma_recognition.KomaRecognition(is_learning = False)
-
-
-	m_files = range(3)
-	t_files = [3]
-	learnW = None
-
-	l_data_list = []
-	t_data_list = []
-
-	for i in m_files:
-		im = Image.open("images/init_ban" + str(i) + ".jpg")
-		ban_matrix = BanMatrix(im)
-		
-		ret = komaRecognition.set_masu_from_one_pic(ban_matrix)
-		ban_matrix.set_init_placement()
-
-		if(ret):
-			for x in range(9):
-				for y in range(9):
-					target = ban_matrix.get_koma(x,y)
-					abs_target = abs(target)
-					l_data = []
-					if(target > 0):
-						l_data.append(1)
-						l_data.append(ban_matrix.get_masu(x,y).snippet_img_arr)
-						l_data_list.append(l_data)
-
-					elif(target < 0):
-						l_data.append(0)
-						l_data.append(ban_matrix.get_masu(x,y).snippet_img_arr)
-						#l_data.append(komaRecognition.inverse_img_arr(ban_matrix.get_masu(x,y).snippet_img_arr))
-						l_data_list.append(l_data)
-					
-		else:
-			print "waring set masu img"
-
-	for i in t_files:
-		im = Image.open("images/init_ban" + str(i) + ".jpg")
-		ban_matrix = BanMatrix(im)
-		ret = komaRecognition.set_masu_from_one_pic(ban_matrix)
-		ban_matrix.set_init_placement()
-		if(ret):
-			for x in range(9):
-				for y in range(9):
-					target = ban_matrix.get_koma(x,y)
-					abs_target = abs(target)
-					t_data = []
-					if(target > 0):
-						t_data.append(1)
-						t_data.append(ban_matrix.get_masu(x,y).snippet_img_arr)
-						t_data_list.append(t_data)
-						
-					elif(target < 0):
-						t_data.append(0)
-						t_data.append(ban_matrix.get_masu(x,y).snippet_img_arr)
-						#t_data.append(komaRecognition.inverse_img_arr(ban_matrix.get_masu(x,y).snippet_img_arr))
-						t_data_list.append(t_data)
-
-					
-		else:
-			print "waring set masu img"
-
-	max_epoch = 20
-	for i in xrange(max_epoch):
-		err_ave = 0.0
-		for l_data in l_data_list:
-			(err, learnW) = DNN.batch_learn(learnW, l_data[1], l_data[0])	
-			err_ave += err
-			#print err
-		err_ave /= len(l_data_list)
-		print "       err= " + str(err_ave)
-	# test
-	success = 0
-	index = 0
-	for t_data in t_data_list:
-		ret = DNN.recog(learnW, t_data[1], [t_data[0]])
-		if ret["success"] == 1:
-			success += 1
-		index += 1
-	# result
-	print str(success) + "/" + str(index)
 
 # 独立に学習する (できるだけ既存のクラス、メソッドをしよう)
-# 歩の場合、6files 係数0.2~0.3で9割が限界？
-def koma_test(koma = 4):
+# 歩の場合、6files 係数0.2~0.3で9割が限界？ # 600枚ほど
+def koma_test(koma = 2):
 	komaRecognition = koma_recognition.KomaRecognition(is_learning = False)
-	m_files = range(18)
-	t_files = [18,19]
+	m_files = range(17)
+	t_files = [17,18,19]
 	learnW = None
 
 	l_data_list = []
 	t_data_list = []
 
+	fl = 0
+
 	for i in m_files:
-		im = Image.open("images/init_ban" + str(i) + ".jpg")
+		file = "images/init_ban" + str(i) + ".jpg"
+		im = Image.open(file)
+		print file
+	
 		ban_matrix = BanMatrix(im)
 		
 		ret = komaRecognition.set_masu_from_one_pic(ban_matrix)
@@ -1157,15 +1078,29 @@ def koma_test(koma = 4):
 		if(ret):
 			for x in xs:
 				for y in ys:
+
 					target = ban_matrix.get_koma(x,y)
-					if(target ==0 or ban_matrix.get_masu(x,y).snippet_img_arr is None):
+					if(target == 0):
 						continue
+					snippet_img_arr = komaRecognition.get_snippet_img(ban_matrix, x, y)
+
+					if(snippet_img_arr is None):
+						continue
+
+					if(fl == 0 and x == 0):
+						fl = 1
+						print snippet_img_arr.shape
+						print len(np.where(snippet_img_arr == 1))
+						print np.where(snippet_img_arr == 255)
+						komaRecognition.show_from_arr(snippet_img_arr/255, is_koma = True)
+
+
 					abs_target = abs(target)
 					l_data = []
 					if(target > 0):
-						img = ban_matrix.get_masu(x,y).snippet_img_arr
+						img = snippet_img_arr
 					else:
-						img = komaRecognition.inverse_img_arr(ban_matrix.get_masu(x,y).snippet_img_arr)
+						img = komaRecognition.inverse_img_arr(snippet_img_arr)
 
 					if(img.shape[0] == 0):
 						print "aaa"
@@ -1181,13 +1116,16 @@ def koma_test(koma = 4):
 						l_data.append(0)
 						l_data.append(img)
 						l_data_list.append(l_data)
-			print img.shape
 					
 		else:
 			print "waring set masu img"
 
+	xs = [0,8]
+	ys = [0,8]
 	for i in t_files:
-		im = Image.open("images/init_ban" + str(i) + ".jpg")
+		file = "images/init_ban" + str(i) + ".jpg"
+		im = Image.open(file)
+		print file
 		ban_matrix = BanMatrix(im)
 		ret = komaRecognition.set_masu_from_one_pic(ban_matrix)
 		ban_matrix.set_init_placement()
@@ -1195,15 +1133,29 @@ def koma_test(koma = 4):
 			for x in xs:
 				for y in ys:
 					target = ban_matrix.get_koma(x,y)
-					if(target ==0 or ban_matrix.get_masu(x,y).snippet_img_arr is None):
+					if(target == 0):
+						continue
+					snippet_img_arr = komaRecognition.get_snippet_img(ban_matrix, x, y)
+
+					if(snippet_img_arr is None):
 						continue
 					abs_target = abs(target)
 			
 					t_data = []
 					if(target > 0):
-						img = ban_matrix.get_masu(x,y).snippet_img_arr
+						img = snippet_img_arr
 					else:
-						img = komaRecognition.inverse_img_arr(ban_matrix.get_masu(x,y).snippet_img_arr)
+						img = komaRecognition.inverse_img_arr(snippet_img_arr)
+
+
+					if(fl == 5 and abs_target == koma):
+
+						print img.shape
+						print len(np.where(img == 1))
+						print np.where(img == 255)
+						komaRecognition.show_from_arr(img/255, is_koma = True)
+
+
 
 					if(img.shape[0] == 0):
 						print "aaa"
@@ -1212,7 +1164,7 @@ def koma_test(koma = 4):
 
 					if(abs_target == koma):
 						t_data.append(1)
-						print (x,y)
+						#print (x,y)
 					elif (target != 0):
 						t_data.append(0)
 					t_data.append(img)
