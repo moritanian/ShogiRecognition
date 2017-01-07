@@ -3,11 +3,11 @@
 
 import numpy as np
 from PIL import Image
-import glob
-import os.path
+from scipy import ndimage
 import cv2
 import copy
 import random
+
 import DNN
 import square_space
 import pickle
@@ -75,8 +75,7 @@ class KomaRecognition:
 	def get_probability(self, ban_matrix, pos, koma):
 		koma_abs = abs(koma)
 		if self.KomaLearnW[koma_abs  -1] == None:
-			f = open(self.KomaLearnFile % (koma_abs- 1))
-			self.KomaLearnW[koma_abs -1] = pickle.load(f)
+			self.KomaLearnW[koma_abs -1] = self.load_learn_data(koma_abs)
 		is_inv = False
 		if koma < 0:
 			isinv = True
@@ -88,6 +87,25 @@ class KomaRecognition:
 			f = open(self.SengoLearnFile)
 			self.SengoLearnW = pickle.load(f)
 		return self.__get_probability(self.SengoLearnW, ban_matrix, pos)
+
+	def dump_learn_data(self, learn_data, koma):
+		koma_abs = koma
+		if(koma_abs <0):
+			koma_abs = -koma_abs
+		f = open(self.KomaLearnFile % (koma_abs- 1), 'w')
+		pickle.dump(learn_data, f)
+		f.close()
+
+	def load_learn_data(self, koma):
+		koma_abs = koma
+		if(koma_abs < 0):
+			koma_abs = -koma
+		if(koma_abs > 8):
+			return None
+		f = open(self.KomaLearnFile % (koma_abs- 1))
+		learn_data = pickle.load(f)
+		f.close()
+		return learn_data
 
 	def __get_probability(self, learn_data, ban_matrix, pos, is_inv = False):
 		arr = ban_matrix.get_masu(pos[0], pos[1]).snippet_img_arr
@@ -118,9 +136,8 @@ class KomaRecognition:
 				target = crt_ban_matrix.get_koma(x,y)
 				abs_target = abs(target)
 				if(abs_target != 0 and abs_target < 9 and take_nums[abs_target - 1] > 0):
-					#self.__set_snippet_img_arr(ban_matrix.get_snippet_img(x,y), target)
-					img_arr = self.get_snippet_img(ban_matrix, x, y)
-					self.__set_snippet_img_arr(img_arr, target)
+					img_arr = self.get_koma_img(ban_matrix, x, y)
+					self.__set_koma_img_arr(img_arr, target)
 					take_nums[abs_target - 1] -= 1
 					
 					if take_nums.count(0) == len(take_nums):
@@ -191,7 +208,7 @@ class KomaRecognition:
 
 
 
-	def __set_snippet_img_arr(self, img_arr, target):
+	def __set_koma_img_arr(self, img_arr, target):
 		abs_target = target
 		if(abs_target < 0):
 			abs_target = - target
@@ -208,6 +225,8 @@ class KomaRecognition:
 		#frame = cv2.convertScaleAbs(cv2.Laplacian(im, cv2.CV_32F, 8))
 
 		im2 = np.array(frame)
+
+		ban_matrix.edge_img = copy.copy(im2)
 		
 		if(self.__board_position_old):
 			line_list = self.get_line_list(im2)
@@ -237,7 +256,9 @@ class KomaRecognition:
 				return 0
 
 			img_list = self.devide_img_from_board_list(im2, board_position_list)
-			ban_matrix.edge_abspos = [board_position_list[0][0][0][0], board_position_list[0][0][0][1]]
+			# 2017/01/07　2016/12/25以降ではピクセル単位の座標指定は右方向をx, 下方向をyにしていたが、
+			# edge_abspos に関しては前にあわせて逆にする(扇検出にのみ使っている模様)
+			ban_matrix.edge_abspos = [board_position_list[0][0][0][1], board_position_list[0][0][0][0]]
 
 			for x in range(9):
 				for y in range(9):
@@ -407,10 +428,15 @@ class KomaRecognition:
 		return True
 
 	def show_from_arr(self, arr, is_koma = False):
+		
+		Image.fromarray(self.get_img_from_arr(arr, is_koma)).show()
+		
+	def get_img_from_arr(self, arr, is_koma = False):
 		if(is_koma):
-			Image.fromarray(arr.reshape([int(self.__col_ave) - self.__cut_off, self.__cut_width]) * 255).show()
+			#return arr.reshape([int(self.__col_ave) - self.__cut_off, self.__cut_width]) * 255
+			return arr.reshape([int(self.__cut_height) ,int(self.__cut_width)]) * 255
 		else:
-			Image.fromarray(arr.reshape([int(self.__col_ave), int(self.__row_ave)]) * 255).show()
+			return arr.reshape([int(self.__col_ave), int(self.__row_ave)]) * 255
 
 	# device で指し示された場所取得 advanced_img:盤面を動かした際に認識した画像 
 	# newest_ban_mastrix:とりこまれた最新のmaxtrix(扇子「が含まれる想定)
@@ -470,6 +496,7 @@ class KomaRecognition:
 			self.__row_ave = 42
 			self.__col_ave = 46
 		ban_region = (edge_abspos[1], edge_abspos[0],  edge_abspos[1] + 9*self.__row_ave, edge_abspos[0] + 9*self.__col_ave)
+		
 		im = back_img.crop(ban_region)
 		im2 = img.crop(ban_region)
 
@@ -486,12 +513,16 @@ class KomaRecognition:
 		print find
 		find[1][np.isnan(find[1])] = 0
 		find[0][np.isnan(find[0])] = 0
+
+		path = "temp/bgdiff.jpg"	
+		self.save_image(np.array(im_edge), path)
+
 		if(not(math.isnan(size)) and size):
 			y = int(find[1][0:size/100].mean())
 			x = int(find[0][0:size/100].mean())
 			
-			path = "sample.jpg"
 			cv2.circle(im3,(y, x),2,(0,0,255),3)
+			
 		else :
 			
 			return None
@@ -633,9 +664,43 @@ class KomaRecognition:
 			self.log_obj.log("predict sengo " + str(prob))
 		return prob
 
+	# 回転、平行移動した駒領域画像の配列取得、ただし get_koma_img を事前にしていること前提
+	# ただし、回転はぼけるため、しないほうがいい
+	def get_koma_img_vari(self, ban_matrix, x,y, trans, rot = 0):
+		masu = ban_matrix.get_masu(x,y)
+		cut_offset = masu.cut_offset
+		start = [cut_offset[0] + trans[0], cut_offset[1] + trans[1]]
+		goal = [start[0] + self.__cut_width, start[1] + self.__cut_height]
+		if(start[0]<0):
+			start[0] = 0
+			goal[0] = self.__cut_width
+		if(start[1] < 0):
+			start[1] = 0
+			goal[1] = self.__cut_height
+		if(goal[0] > self.__row_ave):
+			goal[0] = int(self.__row_ave)
+			start[0] = int(self.__row_ave) - self.__cut_width
+		if(goal[1] > self.__col_ave):
+			goal[1] = int(self.__col_ave)
+			start[1] = int(self.__col_ave) - self.__cut_height
+		s_img = masu.snippet_img
+		if(rot != 0):
+			s_img = ndimage.rotate(s_img, rot)
+		#rotated_img =  np.array(Image.fromarray(s_img).rotate(rot))
+
+		cut_img = s_img[int(start[1]):int(goal[1]), int(start[0]):int(goal[0])]	
+		
+		return self.convert_arr_from_img(cut_img)
+
+
+
 	# マスの画像から駒領域の画像の１次元配列を取得
-	def get_snippet_img(self, ban_matrix, x, y):
-		cut_img = self.cut_along_edge_lines(ban_matrix.get_masu(x,y).snippet_img)
+	def get_koma_img(self, ban_matrix, x, y):
+		masu = ban_matrix.get_masu(x,y)
+		(cut_img, offset) = self.cut_along_edge_lines(masu.snippet_img)
+		if(cut_img is None):
+			return None
+		masu.cut_offset = offset
 		return self.convert_arr_from_img( cut_img)
 
 
@@ -643,11 +708,12 @@ class KomaRecognition:
 	def cut_along_edge_lines(self, img):
 		[edge_lines,prob] = self.get_sengo_edge_lines(img)
 		if(prob == 0):
-			return None
+			return (None, [0,0])
 
 		piece_left = 0
 		self.__cut_width = 30
 		self.__cut_off = 4
+		self.__cut_height = self.__col_ave - self.__cut_off
 
 		
 		if(edge_lines[0] != []):
@@ -664,20 +730,6 @@ class KomaRecognition:
 			if(piece_left == -1):
 				piece_left = 0
 
-		if(False):
-			if(edge_lines[0] != []):
-				if(edge_lines[0][0][0] + cut_off+ cut_width < self.__row_ave ):
-					piece_left = edge_lines[0][0][0] + cut_off
-				elif(edge_lines[1] != []):
-					piece_left = edge_lines[1][0][0] - cut_width - cut_off
-				else:
-					piece_left = self.__row_ave - cut_width
-			else:
-				if(edge_lines[1][0][0] - cut_width - cut_off > 0):
-					piece_left = edge_lines[1][0][0] - cut_width - cut_off
-				else:
-					piece_left = 0
-
 		start = [int(piece_left), self.__cut_off/2]
 		goal = [int(piece_left + self.__cut_width), int(self.__col_ave - self.__cut_off/2)]
 		cut_img = img[start[1]:goal[1], start[0]:goal[0]]
@@ -687,7 +739,7 @@ class KomaRecognition:
 			print "save err"
 			#print cut_img.shape
 			#print piece_left
-		return cut_img
+		return (cut_img, start)
 
 	# 駒領域の左端の計算式定義
 	# ただしマスのりょいういきからはみだしてはいけない
@@ -813,7 +865,10 @@ class KomaRecognition:
 	def test_sample(self):
 		import image_e
 		#img = Image.open("server/capture.jpg")
-		img = Image.open("./images/init_ban17.jpg")
+		img = Image.open("./images/init_ban1.jpg")
+
+		img = Image.fromarray(ndimage.rotate(img, 2))
+	
 		#img = Image.open("./init_ban2.jpg")
 		img_ori = copy.copy(img)
 		im = np.array(img.convert('L'))
@@ -879,6 +934,7 @@ class KomaRecognition:
 		#self.draw_lines_from_polar(arr_img, col_list)
 		self.draw_lines_from_polar(arr_img, grouping_rows)
 		self.save_image(arr_img, "result2.jpg")
+		
 		print "result2 save"
 
 		arr_img = np.array(img)
@@ -896,25 +952,32 @@ class KomaRecognition:
 		self.save_image(arr_img, "result3.jpg")
 
 
-		#Image.fromarray(im2).show()
-		line_list = self.get_line_list(im2)
-		if line_list == []:
-			exit()
-	
-
-		#img_list = self.devide_img(im2, line_list)
 		img_list = self.devide_img_from_board_list(im2, board_position_list)
 
-		edge_abspos = [line_list[1][1] - int(self.__col_ave), line_list[0][1] - int(self.__row_ave)]
 
 		arr_img = np.array(img)
 
 		print self.__col_ave
 		print self.__row_ave
 
-	
-		ban_matrix = image_e.BanMatrix(im2)
+		
+		ban_matrix = image_e.BanMatrix(img_ori)
+
+		self.set_masu_from_one_pic(ban_matrix)
 		ban_matrix.set_init_placement()
+
+		masu = ban_matrix.get_masu(1,1)
+		(cut_img, offset) = self.cut_along_edge_lines(masu.snippet_img)
+		print "cut img shape = " + str(cut_img.shape)
+		
+		snippet_img_arr = self.get_koma_img(ban_matrix, 1,1)
+		snippet_img_arr2 = self.get_koma_img_vari(ban_matrix, 1,1, [0,0], 1)
+		print np.where((snippet_img_arr2 - snippet_img_arr) != 0)
+		#print np.where(snippet_img_arr != 0)
+		roated_arr = self.get_img_from_arr(copy.copy(snippet_img_arr2), True)
+		self.save_image(roated_arr*255, "temp/rotated2.jpg")
+
+		self.save_image(cut_img, "temp/ori_img.jpg")
 		
 		self.flg = 0
 		for x in range(9):
@@ -924,16 +987,11 @@ class KomaRecognition:
 				target = ban_matrix.get_koma(x,y)
 				if(target == 0):
 					continue
-				s_img_pos = [line_list[1][x], line_list[0][y]]
+				s_img_pos = [board_position_list[0][0][0][0], board_position_list[0][0][0][1]]
 				r_img = img_list[x][y]
 				masu = square_space.Masu(x, y , r_img, 0, s_img_pos)
 				img = r_img
 				if(True):
-					if(self.flg == 61):
-						#print img
-						#print self.get_sengo_edge_lines(img)
-						self.save_image(self.cut_along_edge_lines(img), "temp/cut_along.png")
-						
 					[edge_lines,prob] = self.get_sengo_edge_lines( img)
 					if(prob == 0):
 						continue
@@ -1117,7 +1175,7 @@ class KomaRecognition:
 			distace = c1 - c2
 			distance_list.append(distace)
 			
-		median = sorted(distance_list)[int((size + 1)/2)]
+		median = sorted(distance_list)[int((size)/2)]
 
 		start = 0
 		while(not(len(board_lines) in[10]) and start < size):
@@ -1135,7 +1193,7 @@ class KomaRecognition:
 	
 		if(len(board_lines) != 10):
 			if(self.log_obj):
-				log_obj.warning("lines number err")
+				self.log_obj.warning("lines number err" + str(len(board_lines)))
 			else:
 				print "get board lines from list err"
 				print len(board_lines)

@@ -39,6 +39,10 @@
 	opacity: 0.3;
 }
 
+.line.black-out{
+	opacity: 0.1;
+}
+
 .real-world{
 	background-color: #d85599;
 }

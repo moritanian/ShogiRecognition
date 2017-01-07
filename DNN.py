@@ -13,7 +13,7 @@ import math
 #import import_cifar
 
 # global
-learn_weight = 0.2 #0.058 # 0.2
+learn_weight = 0.030 #0.058 # 0.2
 sigmoid_a = 1.0
 is_sigmoid = 1
 layer_num = 3
@@ -21,7 +21,7 @@ layer_num = 3
 flg1 = 0
 img_s_flg = 0
 # 慣性項係数
-inerta_coef = 0.2 # 0.6
+inerta_coef = 0.0 # 0.6
 
 drop_rate = 0.5
 
@@ -104,7 +104,7 @@ def test(learn_data, test_data_set):
 	print "errs = " + str(err_sum/ data_num) 
 
 # ans : 配列
-def recog(learn_data, input_data, ans, is_multi = 0):
+def recog(learn_data, input_data, ans, is_multi = 0, is_print = True):
 	result = forward_all(learn_data, input_data, is_multi)
 	err = calc_rss(result, ans)/len(ans)
 	success = 0
@@ -118,7 +118,9 @@ def recog(learn_data, input_data, ans, is_multi = 0):
 			success = 1
 		if(ans[0] == 1.0):
 			one_num = 1
-		print str(result) + " : " + str(ans[0])
+
+		if(is_print):
+			print str(result) + " : " + str(ans[0])
 
 	else:
 		max_index = np.argmax(np.array(result))
@@ -182,7 +184,8 @@ def learn_m(x_data, y_data, class_num = 1, limit_err = 0.02, is_test = 1):
 # 外部から呼ばれる想定 バッチ学習　
 # x_data: img_arr , y_data : 0 or 1
 def batch_learn(learn_data, x_data, y_data):
-	global layer_num
+	global layer_num, learn_weight
+	#learn_weight += 0.0001
 	if(learn_data == None): # はじめてよばれたとき、初期化する
 		i_learn_data = {}
 		i_learn_data['err'] = 0
@@ -194,9 +197,9 @@ def batch_learn(learn_data, x_data, y_data):
 			layers.append(layer)
 
 		i_learn_data['input_arr_size'] = x_data.size
-		hidden_size = i_learn_data['input_arr_size']/10 #100
-		init_learn_ws(layers, np.random.rand(hidden_size, i_learn_data['input_arr_size']+1) - 0.5 , 1) #/(input_data['input_arr_size'] +1)/100.0
-		init_learn_ws(layers, np.random.rand(1, hidden_size+1) - 0.5, 2) #/hidden_size/100.0
+		hidden_size = int(i_learn_data['input_arr_size']/50) #100
+		init_learn_ws(layers, np.random.rand(hidden_size, i_learn_data['input_arr_size']+1) - 0.50 , 1) #/(input_data['input_arr_size'] +1)/100.0
+		init_learn_ws(layers, np.random.rand(1, hidden_size+1) - 0.50, 2) #/hidden_size/100.0
 
 		i_learn_data['layers'] = layers
 		learn_data = i_learn_data
@@ -346,11 +349,16 @@ def learn_one(learn_data, data):
 	if len(ans) > 1:
 		is_multi = 1
 
+
+	start = time.time()
 	result = forward_all(learn_data, arr, is_multi)
+	elapsed_time = (time.time() - start) * 100.0
+
 	err = calc_rss(result, ans)/len(ans)
 	layer_sum = learn_data['layer_num']
 	
 	# 逆伝播
+	start = time.time()
 	for i in range(learn_data['layer_num']-1):
 		index = layer_sum - i - 1 # 2,1
 		ws_delta = learn_data['layers'][index]['ws_delta']
@@ -361,8 +369,10 @@ def learn_one(learn_data, data):
 				delta_vec = copy.copy(result) - np.array(ans)*np.ones(len(ans))
 				ret =  _backward(ws, xs, result, delta_vec, ws_delta)
 			else:
+				elapsed_time20 = time.time() - start
 				ret = backward(ws, xs, learn_data['result'], np.array(ans), ws_delta)
-			
+				elapsed_time21 = time.time() - start
+
 			new_ws = ret['new_ws']
 			delta_vec = ret['delta_vec']
 		else:
@@ -371,18 +381,30 @@ def learn_one(learn_data, data):
 			ys = learn_data['layers'][index]['ys']
 			child_ws = learn_data['layers'][index + 1]['W']
 			child_delta_vec = copy.copy(delta_vec) # とりあえずコピーしておく　必要ないかも
+			
+			elapsed_time22 = time.time() - start
 			ret = backward_in_hidden_layer(ws, xs,  ys, child_ws, child_delta_vec, ws_delta)
+			elapsed_time23 = time.time() - start
+			
 			learn_data['layers'][index+1]['W'] = copy.copy(new_ws) # 先に前のぶんを更新しておく
 			new_ws = ret['new_ws']
 			delta_vec = ret['delta_vec']
 
 		learn_data['layers'][index]['ws_delta'] = ret['ws_delta']
+
+	elapsed_time2 = time.time() - start
 	
 	learn_data['layers'][1]['W'] = copy.copy(new_ws)
 
 	if(flg1 == 0):
 		flg1=1.0
 		print 	learn_data['layers']
+		print "forward_time = " + str(elapsed_time)
+		print "back ward time = " + str(elapsed_time2)
+		print "time = " + str(elapsed_time20)
+		print "time= " + str(elapsed_time21)
+		print "time= " + str(elapsed_time22)
+		print "time= " + str(elapsed_time23)
 	return err
 
 def calc_rss(result, ans):
@@ -517,8 +539,11 @@ def dif_activation(y):
 		dif = 0.0
 	return dif
 
-def sigmoid(x, a = 1.0):
-	return 1.0/(1.0+np.exp(-x*a))
+def sigmoid(x):
+	global sigmoid_a
+	if(x < -709): # over flow 対策 x が十分小さいとき、sigmoid(x) = 0となる (exp(x) がoverflowする)
+		return 0
+	return 1.0/(1.0+np.exp(-x*sigmoid_a))
 
 def soft_max(x_arr):
 	parent_e = 0.0
@@ -552,9 +577,10 @@ def backward_in_hidden_layer(ws, xs,  ys, child_ws, child_delta_vec, ws_delta):
 # delta: vector 
 def _backward(ws, xs, ys, delta_vec, old_ws_delta):
 	global learn_weight
-	del_mat = np.transpose( get_same_array(delta_vec, xs.size + 1))
-	diag_arr = np.diag(np.append(xs,1))
-	ws_delta = learn_weight * np.dot(del_mat, diag_arr) + inerta_coef * old_ws_delta 
+	# 0.02s cost
+	inerta = inerta_coef * old_ws_delta 
+	main_delta = learn_weight * delta_vec[:, np.newaxis] * np.append(xs, 1)
+	ws_delta = main_delta + inerta 
 	new_ws = ws - ws_delta
 	return {'new_ws':new_ws, 'delta_vec':delta_vec, 'ws_delta':ws_delta}
 
@@ -562,11 +588,11 @@ def _backward(ws, xs, ys, delta_vec, old_ws_delta):
 def calc_delta_vec_in_hidden_layer(ys, child_ws, child_delta_vec):
 	global sigmoid_a
 	w_size_in_child_ws = get_matrix_width(child_ws)
+
 	if child_ws.ndim == 1: # 1次元の場合、転置できないため例外対応
 		mod_child_ws = child_ws[0:w_size_in_child_ws-1].reshape([w_size_in_child_ws - 1, 1])
 	else:
 		mod_child_ws = (np.transpose(child_ws))[0:w_size_in_child_ws - 1] # 転置して定数項の部分を削除
-	
 	return np.dot(mod_child_ws, child_delta_vec) * sigmoid_a* ((np.ones(ys.size) - ys) * ys)
 
 # [[arr],

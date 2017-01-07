@@ -18,6 +18,7 @@ class Masu:
 		self.is_koma = not(_koma == 0) # 駒があるか
 		self.snippet_img_pos = s_img_pos
 		self.snippet_img_size = np.array(self.snippet_img).shape # snippet の元サイズ
+		self.cut_offset = [0,0]
 
 	def kihu_pos(self):
 		return [9 - y, x + 1]

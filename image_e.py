@@ -29,8 +29,8 @@ import inspect
 
 from server import main_sock 
 
-URL = "http://localhost/flyby/"
-
+#URL = "http://localhost/flyby/"
+URL = "https://shogirecognitionserver.herokuapp.com/"
 HU = 1
 KYO = 2
 KEI = 3
@@ -58,6 +58,7 @@ class BanMatrix:
 		self.log_obj = log_obj
 
 		self.img = img
+		self.edge_img = None # canny
 		self.edge_abspos = []
 		self.__capture = [[],[]] # 持ち駒 # capture[0] 先手 駒一つにつきpushする
 								# 配列にするのあまりイケてない気が.. どう管理するのがいい？少なくとも外部からは隠ぺいすべき
@@ -522,7 +523,7 @@ class Kihu:
 			log_obj.main_socket().set_info_status(status, node_id = 2)
 		
 		if(ret):
-			log_obj.log(ret)
+			log_obj.log(str(ret))
 		else:
 			log_obj.warning("server post err")
 
@@ -616,6 +617,7 @@ class PlayFlow:
 		# 2,有無識別
 
 		ban_matrix = BanMatrix(Image.fromarray(img), log_obj = self.log_obj)
+		#ban_matrix = BanMatrix(img, log_obj = self.log_obj)
 		#self.crt_ban_matrix.print_ban()
 		# 盤面セットに成功したら
 		if self.koma_recognition.set_masu_from_one_pic(ban_matrix):
@@ -637,7 +639,8 @@ class PlayFlow:
 					if(self.__capture_count == 20):
 
 						#self.__capture_count = 0
-						ban_matrix.img.save(self.__capture_path)
+						#ban_matrix.img.save(self.__capture_path)
+						cv2.imwrite(self.__capture_path, np.array(ban_matrix.img))
 						self.advanced_img = ban_matrix.img
 
 	 			#print ret
@@ -1052,10 +1055,10 @@ def make_data():
 
 # 独立に学習する (できるだけ既存のクラス、メソッドをしよう)
 # 歩の場合、6files 係数0.2~0.3で9割が限界？ # 600枚ほど
-def koma_test(koma = 2):
+def koma_test(koma = 2, test_only = False):
 	komaRecognition = koma_recognition.KomaRecognition(is_learning = False)
-	m_files = range(17)
-	t_files = [17,18,19]
+	m_files = range(12)
+	t_files = [13,14,15,16,17,18,19]
 	learnW = None
 
 	l_data_list = []
@@ -1063,68 +1066,89 @@ def koma_test(koma = 2):
 
 	fl = 0
 
-	for i in m_files:
-		file = "images/init_ban" + str(i) + ".jpg"
-		im = Image.open(file)
-		print file
-	
-		ban_matrix = BanMatrix(im)
+	if(not(test_only)):
+		for i in m_files:
+			file = "images/init_ban" + str(i) + ".jpg"
+			im = Image.open(file)
+			print file
 		
-		ret = komaRecognition.set_masu_from_one_pic(ban_matrix)
-		ban_matrix.set_init_placement()
-		xs = [0,6,7,8]
-		ys = [0,2,6,8]
+			xs = [0,6,7,8]
+			ys = [0,1,8]
 
-		if(ret):
-			for x in xs:
-				for y in ys:
+			for j in range(1):
+				if(j==1):
+					im = im.rotate(0.7)
+				elif(j==2):
+					im = im.rotate(-0.7)
 
-					target = ban_matrix.get_koma(x,y)
-					if(target == 0):
-						continue
-					snippet_img_arr = komaRecognition.get_snippet_img(ban_matrix, x, y)
+				ban_matrix = BanMatrix(im)
+				ret = komaRecognition.set_masu_from_one_pic(ban_matrix)
+				ban_matrix.set_init_placement()
+				
+				if(ret):
+					for x in xs:
+						for y in ys:
 
-					if(snippet_img_arr is None):
-						continue
+							target = ban_matrix.get_koma(x,y)
+							if(target == 0):
+								continue
+							snippet_img_arr = komaRecognition.get_koma_img(ban_matrix, x, y)
+							snippet_img_arrs = []
+							snippet_img_arrs.append(snippet_img_arr)
+							snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [0,-2], 0))
+							snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [0,2], 0))
+							#snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [2,0], 0))
+							#snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [-2,0], 0))
 
-					if(fl == 0 and x == 0):
-						fl = 1
-						print snippet_img_arr.shape
-						print len(np.where(snippet_img_arr == 1))
-						print np.where(snippet_img_arr == 255)
-						komaRecognition.show_from_arr(snippet_img_arr/255, is_koma = True)
+							for snippet_img_arr in snippet_img_arrs:
+								if(snippet_img_arr is None):
+									continue
+
+								abs_target = abs(target)
+								l_data = []
+								if(target > 0):
+									img = snippet_img_arr
+								else:
+									img = komaRecognition.inverse_img_arr(snippet_img_arr)
+
+								if(fl == 0 and x == 8 and i ==2):
+									fl = 1
+									#komaRecognition.show_from_arr(snippet_img_arr*255, is_koma = True)
 
 
-					abs_target = abs(target)
-					l_data = []
-					if(target > 0):
-						img = snippet_img_arr
-					else:
-						img = komaRecognition.inverse_img_arr(snippet_img_arr)
 
-					if(img.shape[0] == 0):
-						print "aaa"
-						print x
-						print y
+								if(img.shape[0] == 0):
+									print "aaa"
+									print x
+									print y
 
-					if(abs_target == koma):
-						l_data.append(1)
-						l_data.append(img)
-						l_data_list.append(l_data)
+								if(abs_target == koma):
+									l_data.append(1)
+									l_data.append(img)
+									l_data_list.append(l_data)
 
-					else:
-						l_data.append(0)
-						l_data.append(img)
-						l_data_list.append(l_data)
-					
-		else:
-			print "waring set masu img"
+								else:
+									l_data.append(0)
+									l_data.append(img)
+									l_data_list.append(l_data)
+							
+				else:
+					print "waring set masu img"
 
-	xs = [0,8]
-	ys = [0,8]
+		print "leran data num = " + str(len(l_data_list))
+
+	xs = [0,2,8]
+	ys = [0,3,8]
+
+	image_files = []
 	for i in t_files:
 		file = "images/init_ban" + str(i) + ".jpg"
+		image_files.append(file)
+
+	#image_files.append("init_ban1.jpg")
+	for file in image_files:
 		im = Image.open(file)
+		#im = im.rotate(-0.3)
 		print file
 		ban_matrix = BanMatrix(im)
 		ret = komaRecognition.set_masu_from_one_pic(ban_matrix)
@@ -1135,7 +1159,7 @@ def koma_test(koma = 2):
 					target = ban_matrix.get_koma(x,y)
 					if(target == 0):
 						continue
-					snippet_img_arr = komaRecognition.get_snippet_img(ban_matrix, x, y)
+					snippet_img_arr = komaRecognition.get_koma_img(ban_matrix, x, y)
 
 					if(snippet_img_arr is None):
 						continue
@@ -1148,12 +1172,12 @@ def koma_test(koma = 2):
 						img = komaRecognition.inverse_img_arr(snippet_img_arr)
 
 
-					if(fl == 5 and abs_target == koma):
+					if(fl == 1 and abs_target == koma):
+						fl += 1
+						print "show"
+						#komaRecognition.show_from_arr(img * 255, is_koma = True)
+						print target
 
-						print img.shape
-						print len(np.where(img == 1))
-						print np.where(img == 255)
-						komaRecognition.show_from_arr(img/255, is_koma = True)
 
 
 
@@ -1174,26 +1198,63 @@ def koma_test(koma = 2):
 		else:
 			print "waring set masu img"
 
-	max_epoch =15
-	for i in xrange(max_epoch):
-		err_ave = 0.0
-		for l_data in l_data_list:
-			(err, learnW) = DNN.batch_learn(learnW, l_data[1], l_data[0])	
-			err_ave += err
-			#print err
-		err_ave /= len(l_data_list)
-		print "       err= " + str(err_ave)
 
-		# test
-		success = 0
-		index = 0
-		for t_data in t_data_list:
-			ret = DNN.recog(learnW, t_data[1], [t_data[0]])
-			if ret["success"] == 1:
-				success += 1
-			index += 1
-		# result
-		print str(success) + "/" + str(index)
+	max_epoch =1000
+	if(test_only):
+		max_epoch = 1
+		learnW = komaRecognition.load_learn_data(koma)
+
+	start_time = time.time()
+	last_time = start_time
+	for i in xrange(max_epoch):
+		if(not(test_only)):
+			err_ave = 0.0
+			data_num = len(l_data_list)
+			success = 0
+			for l_data in l_data_list:
+				(err, learnW) = DNN.batch_learn(learnW, l_data[1], l_data[0])	
+				err_ave += err
+				result = learnW["result"]
+				if(result >= 0.5):
+					result = 1
+				else:
+					result = 0
+				if(l_data[0] == result):
+					success += 1
+
+				#print err
+			err_ave /= len(l_data_list)
+			rate = success*1.0/data_num
+			print "       err= " + str(err_ave)
+			print "rate = " + str(success) + "/" + str(data_num) + "( " + str(rate) +  ")"
+
+		if(True):
+			# test
+			success = 0
+			index = 0
+			for t_data in t_data_list:
+				ret = DNN.recog(learnW, t_data[1], [t_data[0]], is_print = False)
+				if ret["success"] == 1:
+					success += 1
+				index += 1
+
+
+			crt_time = time.time()
+
+			elapsed_time = crt_time - last_time
+			total_time = crt_time - start_time
+			last_time = crt_time
+
+			# result
+			rate = float(success*1.0/index) 
+			print "epoch " + str(i)
+			print str(success) + "/" + str(index) + "(" + str(rate) +")"
+			print "elapsed time = " + str(int(elapsed_time) ) + " total time = " + str(int(total_time))
+
+			if(rate > 0.80):
+				print "fin rate = " + str(rate)
+				komaRecognition.dump_learn_data(learnW ,koma)
+				break
 
 
 
@@ -1368,9 +1429,9 @@ def main():
 	print "successfully ended"
 
 if __name__ == '__main__':
-	#main()
+	main()
 	#sengo_test()
-	koma_test()
+	#koma_test(test_only = False)
 
 
 
