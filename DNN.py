@@ -13,7 +13,7 @@ import math
 #import import_cifar
 
 # global
-learn_weight = 0.030 #0.058 # 0.2
+learn_weight = 0.00540 #0.058 # 0.2
 sigmoid_a = 1.0
 is_sigmoid = 1
 layer_num = 3
@@ -197,7 +197,7 @@ def batch_learn(learn_data, x_data, y_data):
 			layers.append(layer)
 
 		i_learn_data['input_arr_size'] = x_data.size
-		hidden_size = int(i_learn_data['input_arr_size']/50) #100
+		hidden_size = int(i_learn_data['input_arr_size']/5) #100
 		init_learn_ws(layers, np.random.rand(hidden_size, i_learn_data['input_arr_size']+1) - 0.50 , 1) #/(input_data['input_arr_size'] +1)/100.0
 		init_learn_ws(layers, np.random.rand(1, hidden_size+1) - 0.50, 2) #/hidden_size/100.0
 
@@ -497,7 +497,7 @@ def forward_without_activation(arr, ws):
 
 # 行列の各要素に適応
 def apply_each(mat, fun):
-	# 要素が1つの時、2次元配列にならず、1次元になってしまう対策
+	# 要素が1つの時、2次元配列にならず、1次元になってしま+う対策
 	if mat.size == 1:
 		return fun(mat)
 	for y in xrange(mat[0].size):
@@ -515,6 +515,7 @@ def get_matrix_width(mat):
 # vector の各要素に作用
 def apply_vector(vec, fun):
 	# 要素が1つの時, スカラーになってしまう
+	#return fun(vec)
 	if vec.size == 1:
 		return fun(vec)
 	for n in xrange(vec.size):
@@ -539,6 +540,7 @@ def dif_activation(y):
 		dif = 0.0
 	return dif
 
+#@np.vectorize
 def sigmoid(x):
 	global sigmoid_a
 	if(x < -709): # over flow 対策 x が十分小さいとき、sigmoid(x) = 0となる (exp(x) がoverflowする)
@@ -566,7 +568,8 @@ def convert_arr_from_img(img):
 
 # correct_ys を計算し、ws を更新する 更新されたwsが返る(非破壊的　たぶん) 最後尾のみ
 def backward(ws, xs, ys, correct_ys, ws_delta):
-	delta_vec = (ys - correct_ys) * apply_vector(ys, dif_activation)
+	#delta_vec = (ys - correct_ys) * apply_vector(ys, dif_activation)
+	delta_vec = (ys - correct_ys) * ys * (1.0 - ys)
 	return _backward(ws, xs, ys, delta_vec, ws_delta)
 
 def backward_in_hidden_layer(ws, xs,  ys, child_ws, child_delta_vec, ws_delta):
