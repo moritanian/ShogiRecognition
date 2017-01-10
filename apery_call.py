@@ -5,7 +5,8 @@ import subprocess
 
 class AperyCall:
 	def __init__(self):
-		cmd = "D:/ukamuse_sdt4/bin/ukamuse_sdt4_bmi2.exe"
+		#cmd = "D:/ukamuse_sdt4/bin/ukamuse_sdt4_bmi2.exe"
+		cmd = "C:/Users/mech-user/Desktop/python/ukamuse_sdt4/bin/ukamuse_sdt4_bmi2.exe"
 		self.proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE , stdin = subprocess.PIPE )
 		self.send_cmd("usi", "usiok")
 		self.send_cmd("isready")
