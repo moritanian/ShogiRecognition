@@ -1280,61 +1280,148 @@ def koma_test(koma = 2, test_only = False):
 
 
 
+def make_for_chainer_from_one_pic(img, ban_matrix, komaRecognition):
+	x_data = []
+	y_data = []
+
+	for x in range(9):
+		for y in range(9):
+			target = ban_matrix.get_koma(x,y)
+			if(target == 0):
+				continue
+			#snippet_img_arr = komaRecognition.get_koma_img(ban_matrix, x, y)
+			snippet_img_arr = komaRecognition.get_koma_img_arr_threshold(ban_matrix, x, y)
+			snippet_img_arrs = []
+			snippet_img_arrs.append(snippet_img_arr)
+			#snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [0,-2], 0))
+			#snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [0,2], 0))
+			#snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [2,0], 0))
+			#snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [-2,0], 0))
+
+			for snippet_img_arr in snippet_img_arrs:
+				if(snippet_img_arr is None):
+					continue
+
+				abs_target = abs(target)
+				if(target > 0):
+					img = snippet_img_arr
+				else:
+					img = komaRecognition.inverse_img_arr(snippet_img_arr)
+
+				if(img.shape[0] == 0):
+					print "aaa"
+					print x
+					print y
+
+				y_data.append(abs_target - 1)
+				x_data.append(img*256)
+
+	print "img size= " + str(x_data[0].shape) 
+	return (x_data, y_data)
+							
+			
+def test(koma = 2):
+	komaRecognition = koma_recognition.KomaRecognition(is_learning = False)
+
+	x_data = []
+	y_data = []
+
+	m_files = range(19)
+	fl = 0
+	if(True):
+		for i in m_files:
+			file = "images/init_ban" + str(i) + ".jpg"
+			im = Image.open(file)
+			print file
+		
+			#xs = [0,6,7,8]
+			#ys = [0,1,8]
+			xs = range(9)
+			ys = range(9)
+
+			for j in range(5):
+				if(j==1):
+					im = im.rotate(0.4)
+				elif(j==2):
+					im = im.rotate(-0.4)
+				elif(j==3):
+					im = im.rotate(0.7)
+				elif(j==4):
+					im = im.rotate(-0.7)
+
+				ban_matrix = BanMatrix(im)
+				ret = komaRecognition.set_masu_from_one_pic(ban_matrix)
+				ban_matrix.set_init_placement()
+				
+				if(ret):
+					for x in xs:
+						for y in ys:
+
+							target = ban_matrix.get_koma(x,y)
+							if(target == 0):
+								continue
+							#snippet_img_arr = komaRecognition.get_koma_img(ban_matrix, x, y)
+							snippet_img_arr = komaRecognition.get_koma_img_arr_threshold(ban_matrix, x, y)
+							snippet_img_arrs = []
+							snippet_img_arrs.append(snippet_img_arr)
+							#snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [0,-2], 0))
+							#snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [0,2], 0))
+							#snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [2,0], 0))
+							#snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [-2,0], 0))
+
+							for snippet_img_arr in snippet_img_arrs:
+								if(snippet_img_arr is None):
+									continue
+
+								abs_target = abs(target)
+								l_data = []
+								if(target > 0):
+									img = snippet_img_arr
+								else:
+									img = komaRecognition.inverse_img_arr(snippet_img_arr)
+
+								if(fl == 0 and x == 0 and y==1 and i ==2):
+									fl = 1
+									#komaRecognition.show_from_arr(img*255, is_koma = True)
 
 
 
+								if(img.shape[0] == 0):
+									print "aaa"
+									print x
+									print y
 
+								#if(abs_target == koma):
+								#	y_data.append(1)
 
-def test():
-	# グレースケール 縮小
-	im = Image.open("init_ban1.jpg")
-	im = np.array(im.convert('L'))
-	#im = laplacian(im)
+								#else:
+								#	y_data.append(0)
+								y_data.append(abs_target - 1)
+								x_data.append(img*256)
+							
+				else:
+					print "waring set masu img"
 
-	#im = max_pooling(im)
+		print "img size = " + str(x_data[0].shape)
+		print "leran data num = " + str(len(x_data))
+		import chain_recog 
+		model = chain_recog.learn(np.array(x_data, np.float32), np.array(y_data, np.int32), 8)
+		komaRecognition.dump_learn_data(model)
 
-	#img = cv2.imread('init_ban.jpg')
-	frame = cv2.Canny(im,10,180)
-	#cv2.imshow('image', frame)
-
-
-	im2 = np.array(frame)
-	#im2 = max_pooling(im2)
-
-	line_list = get_line_list(im2)
-	line_img = add_line(im2, line_list)
-
-
-	Image.fromarray(line_img).show()
-	img_list = devide_img(im2, line_list)
-	Image.fromarray(inverse_img( img_list[0][0]) ).show()
-
-
-
-	#hist, bins = np.histogram( line_img, bins=256 )
-
-	# 0〜256までplot
-	#plt.plot( hist )
-	#plt.xlim(0, 256)
-	#plt.show()
-
-#test()
-#learn_data = make_data()
-#chain_recog.learn(learn_data['x_data'], learn_data['y_data'])
-
-#learn_data =  DNN.learn_m(learn_data['x_data'], learn_data['y_data'])
-#f = open('learn_data.txt', 'w')
-#pickle.dump(learn_data, f)
-#f.close()
-#f = open('learn_data.txt')
-#learn_data = pickle.load(f)
-
-#ban_recog(learn_data)
-
-#im = Image.open("init_ban1.jpg")
-#recog_one_ban(im)
-
-
+def test2():
+	komaRecognition = koma_recognition.KomaRecognition(is_learning = False)
+	komaRecognition.set_col_row_ave(47.169,42.5)
+	file = "init_ban1.jpg"
+	i = 17
+	file =  "images/init_ban" + str(i) + ".jpg"
+	im = Image.open(file)
+	ban_matrix = BanMatrix(im)
+	ret = komaRecognition.set_masu_from_one_pic(ban_matrix)
+	ban_matrix.set_init_placement()
+	(x_data, y_data) = make_for_chainer_from_one_pic(im, ban_matrix, komaRecognition)
+	import chain_recog 
+	model = komaRecognition.load_learn_data()
+	print chain_recog.recog(np.array(x_data, np.float32), np.array(y_data, np.int32), model)	
 
 # print をラップする
 
@@ -1456,8 +1543,8 @@ def main():
 if __name__ == '__main__':
 	#main()
 	#sengo_test()
-	koma_test(test_only = True)
-
+	#koma_test(test_only = True)
+	test2()
 
 
 
