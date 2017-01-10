@@ -428,8 +428,10 @@ class KomaRecognition:
 		return True
 
 	def show_from_arr(self, arr, is_koma = False):
-		
-		Image.fromarray(self.get_img_from_arr(arr, is_koma)).show()
+		img = self.get_img_from_arr(arr, is_koma)
+		print "show from arr"
+		print img.shape
+		Image.fromarray(img).show()
 		
 	def get_img_from_arr(self, arr, is_koma = False):
 		if(is_koma):

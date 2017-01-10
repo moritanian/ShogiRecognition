@@ -1113,7 +1113,7 @@ def koma_test(koma = 2, test_only = False):
 								else:
 									img = komaRecognition.inverse_img_arr(snippet_img_arr)
 
-								if(fl == 0 and x == 0 and i ==2):
+								if(fl == 0 and x == 0 and y==1 and i ==2):
 									fl = 1
 									komaRecognition.show_from_arr(img*255, is_koma = True)
 
@@ -1138,7 +1138,7 @@ def koma_test(koma = 2, test_only = False):
 		print "leran data num = " + str(len(l_data_list))
 
 	xs = [0,2,8]
-	ys = [0,3,8]
+	ys = [1,7,8]
 
 	image_files = []
 	for i in t_files:
@@ -1261,13 +1261,15 @@ def koma_test(koma = 2, test_only = False):
 			if(rate > max_rate):
 				max_rate = rate
 				epoch_in_max = i
-			if(rate > 0.80):
+			if(rate > 0.85):
 				print "fin rate = " + str(rate)
 				komaRecognition.dump_learn_data(learnW ,koma)
 				break
 
 	print "max rate = " + str(max_rate) + " in " + str(epoch_in_max)
-
+	optimal_input = DNN.get_optimal_stimulation_first(learnW)
+	komaRecognition.show_from_arr(optimal_input, is_koma = True)
+	print DNN.recog(learnW, optimal_input, [1], is_print = False)
 
 
 
