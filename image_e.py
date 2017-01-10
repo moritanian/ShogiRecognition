@@ -26,6 +26,7 @@ import sys
 import datetime
 import time
 import inspect
+import random
 
 from server import main_sock 
 
@@ -1082,7 +1083,7 @@ def koma_test(koma = 2, test_only = False):
 			xs = [0,6,7,8]
 			ys = [0,1,8]
 
-			for j in range(1):
+			for j in range(3):
 				if(j==1):
 					im = im.rotate(0.7)
 				elif(j==2):
@@ -1099,11 +1100,12 @@ def koma_test(koma = 2, test_only = False):
 							target = ban_matrix.get_koma(x,y)
 							if(target == 0):
 								continue
-							snippet_img_arr = komaRecognition.get_koma_img(ban_matrix, x, y)
+							#snippet_img_arr = komaRecognition.get_koma_img(ban_matrix, x, y)
+							snippet_img_arr = komaRecognition.get_koma_img_arr_threshold(ban_matrix, x, y)
 							snippet_img_arrs = []
 							snippet_img_arrs.append(snippet_img_arr)
-							snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [0,-2], 0))
-							snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [0,2], 0))
+							#snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [0,-2], 0))
+							#snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [0,2], 0))
 							#snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [2,0], 0))
 							#snippet_img_arrs.append(komaRecognition.get_koma_img_vari(ban_matrix, x,y, [-2,0], 0))
 
@@ -1118,9 +1120,9 @@ def koma_test(koma = 2, test_only = False):
 								else:
 									img = komaRecognition.inverse_img_arr(snippet_img_arr)
 
-								if(fl == 0 and x == 8 and i ==2):
+								if(fl == 0 and x == 0 and i ==2):
 									fl = 1
-									#komaRecognition.show_from_arr(snippet_img_arr*255, is_koma = True)
+									komaRecognition.show_from_arr(img*255, is_koma = True)
 
 
 
@@ -1131,13 +1133,11 @@ def koma_test(koma = 2, test_only = False):
 
 								if(abs_target == koma):
 									l_data.append(1)
-									l_data.append(img)
-									l_data_list.append(l_data)
 
 								else:
 									l_data.append(0)
-									l_data.append(img)
-									l_data_list.append(l_data)
+								l_data.append(img)
+								l_data_list.append(l_data)
 							
 				else:
 					print "waring set masu img"
@@ -1166,8 +1166,9 @@ def koma_test(koma = 2, test_only = False):
 					target = ban_matrix.get_koma(x,y)
 					if(target == 0):
 						continue
-					snippet_img_arr = komaRecognition.get_koma_img(ban_matrix, x, y)
-
+					#snippet_img_arr = komaRecognition.get_koma_img(ban_matrix, x, y)
+					snippet_img_arr = komaRecognition.get_koma_img_arr_threshold(ban_matrix, x, y)
+					
 					if(snippet_img_arr is None):
 						continue
 					abs_target = abs(target)
@@ -1213,12 +1214,17 @@ def koma_test(koma = 2, test_only = False):
 
 	start_time = time.time()
 	last_time = start_time
+
+	data_num = len(l_data_list)
+	max_rate = 0.0
 	for i in xrange(max_epoch):
 		if(not(test_only)):
 			err_ave = 0.0
-			data_num = len(l_data_list)
+			index_list = range(data_num)
+			random.shuffle(index_list)
 			success = 0
-			for l_data in l_data_list:
+			for index in index_list:
+				l_data = l_data_list[index]
 				(err, learnW) = DNN.batch_learn(learnW, l_data[1], l_data[0])	
 				err_ave += err
 				result = learnW["result"]
@@ -1239,6 +1245,7 @@ def koma_test(koma = 2, test_only = False):
 			# test
 			success = 0
 			index = 0
+			
 			for t_data in t_data_list:
 				ret = DNN.recog(learnW, t_data[1], [t_data[0]], is_print = False)
 				if ret["success"] == 1:
@@ -1258,10 +1265,16 @@ def koma_test(koma = 2, test_only = False):
 			print str(success) + "/" + str(index) + "(" + str(rate) +")"
 			print "elapsed time = " + str(int(elapsed_time) ) + " total time = " + str(int(total_time))
 
+			if(rate > max_rate):
+				max_rate = rate
+				epoch_in_max = i
 			if(rate > 0.80):
 				print "fin rate = " + str(rate)
 				komaRecognition.dump_learn_data(learnW ,koma)
 				break
+
+	print "max rate = " + str(max_rate) + " in " + str(epoch_in_max)
+
 
 
 
@@ -1439,9 +1452,9 @@ def main():
 	print "successfully ended"
 
 if __name__ == '__main__':
-	main()
+	#main()
 	#sengo_test()
-	#koma_test(test_only = False)
+	koma_test(test_only = True)
 
 
 

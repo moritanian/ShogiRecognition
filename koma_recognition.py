@@ -47,7 +47,7 @@ class KomaRecognition:
 
 		self.SengoLearnFile = "sengo_recog.txt"
 		self.SengoLearnW = None
-		self.KomaLearnFile = "koma%d_recog.txt"
+		self.KomaLearnFile = "learn_data/koma%d_recog.txt"
 		self.KomaLearnW = []
 		for i in range(8): # magic number
 			self.KomaLearnW.append(None)
@@ -487,7 +487,6 @@ class KomaRecognition:
 		return ans
 
 
-
 	# 扇子の先端位置取得
 	# 差分を利用
 	def get_tip_abspos(self, back_img, img, edge_abspos):
@@ -704,6 +703,23 @@ class KomaRecognition:
 		masu.cut_offset = offset
 		return self.convert_arr_from_img( cut_img)
 
+	# 元画像からきりぬき
+	def get_masu_color_img(self, ban_matrix, x, y):
+		masu = ban_matrix.get_masu(x,y)
+		cut = (masu.snippet_img_pos[0], masu.snippet_img_pos[1], masu.snippet_img_pos[0] + self.__row_ave, masu.snippet_img_pos[1] + self.__col_ave)
+		return ban_matrix.img.crop(cut) 
+
+	def get_koma_img_arr_threshold(self, ban_matrix, x, y):
+		masu = ban_matrix.get_masu(x,y)
+		(cut_img, offset) = self.cut_along_edge_lines(masu.snippet_img)
+		if(cut_img is None):
+			return None
+		masu.cut_offset = offset
+		c_img = self.get_masu_color_img(ban_matrix, x, y)
+		im = np.array(c_img.convert('L'))
+		im = cv2.adaptiveThreshold(im,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)
+		im = 255- im[ offset[1]:int(offset[1] + self.__cut_height), offset[0]:offset[0] + int(self.__cut_width)]
+		return self.convert_arr_from_img(im)
 
 	# 駒の端の直線に従って長方形に切り抜く
 	def cut_along_edge_lines(self, img):
@@ -712,10 +728,9 @@ class KomaRecognition:
 			return (None, [0,0])
 
 		piece_left = 0
-		self.__cut_width = 30
-		self.__cut_off = 4
+		self.__cut_width = 24 # 30
+		self.__cut_off = 10 # 4
 		self.__cut_height = self.__col_ave - self.__cut_off
-
 		
 		if(edge_lines[0] != []):
 			piece_left = self.__piece_left_from_left(edge_lines[0][0][0])
