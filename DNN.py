@@ -13,8 +13,7 @@ import math
 #import import_cifar
 
 # global
-learn_weight = 0.00540 #0.058 # 0.2
-sigmoid_a = 1.0
+learn_weight = 0.0240 #0.058 # 0.2
 is_sigmoid = 1
 layer_num = 3
 
@@ -23,7 +22,7 @@ img_s_flg = 0
 # 慣性項係数
 inerta_coef = 0.0 # 0.6
 
-drop_rate = 0.5
+drop_rate_arr = [0.6, 0.5]
 
 # 各種学習中のパラメータを入れる箱
 # learn_data
@@ -105,7 +104,7 @@ def test(learn_data, test_data_set):
 
 # ans : 配列
 def recog(learn_data, input_data, ans, is_multi = 0, is_print = True):
-	result = forward_all(learn_data, input_data, is_multi)
+	result = forward_all(learn_data, input_data, is_multi, is_drop = False)
 	err = calc_rss(result, ans)/len(ans)
 	success = 0
 	# fix me
@@ -197,7 +196,7 @@ def batch_learn(learn_data, x_data, y_data):
 			layers.append(layer)
 
 		i_learn_data['input_arr_size'] = x_data.size
-		hidden_size = int(i_learn_data['input_arr_size']/5) #100
+		hidden_size = int(i_learn_data['input_arr_size']/20) #100
 		init_learn_ws(layers, np.random.rand(hidden_size, i_learn_data['input_arr_size']+1) - 0.50 , 1) #/(input_data['input_arr_size'] +1)/100.0
 		init_learn_ws(layers, np.random.rand(1, hidden_size+1) - 0.50, 2) #/hidden_size/100.0
 
@@ -351,7 +350,7 @@ def learn_one(learn_data, data):
 
 
 	start = time.time()
-	result = forward_all(learn_data, arr, is_multi)
+	result = forward_all(learn_data, arr, is_multi, is_drop = True)
 	elapsed_time = (time.time() - start) * 100.0
 
 	err = calc_rss(result, ans)/len(ans)
@@ -412,9 +411,13 @@ def calc_rss(result, ans):
 	return np.dot(diff, diff)
 
 # 一回,回す
-def forward_all(learn_data, arr, is_multi = 0):
+def forward_all(learn_data, arr, is_multi = 0, is_drop = False):
+	global drop_rate_arr
 	layer_sum = learn_data['layer_num']
-	learn_data['layers'][0]['ys'] =  copy.copy(arr) # 参照渡し　対策
+	if(is_drop):
+		learn_data['layers'][0]['ys'] =  drop_mask(copy.copy(arr), drop_rate_arr[0]) # 参照渡し　対策
+	else:
+		learn_data['layers'][0]['ys'] =  copy.copy(arr)*(1.0 - drop_rate_arr[0]) # 参照渡し　対策
 
 	for i in range(learn_data['layer_num']-1):
 		parent_layer = learn_data['layers'][i]
@@ -424,11 +427,93 @@ def forward_all(learn_data, arr, is_multi = 0):
 			arr = soft_max(f_arr)
 		else:
 			arr = forward(parent_layer['ys'], layer['W'])
-		layer['ys'] = copy.copy(arr)
+
+		# 最後尾のときそのまま、それ以外はdrop out を考慮
+		if(i < learn_data['layer_num'] -2 ):
+			if(is_drop):
+				layer['ys'] = drop_mask(copy.copy(arr), drop_rate_arr[i+1])
+			else:
+				layer['ys'] = copy.copy(arr)*(1.0 - drop_rate_arr[i+1])
+		else:
+			layer['ys'] = copy.copy(arr)
 
 	learn_data['result'] = learn_data['layers'][layer_sum -1]['ys']
 	
 	return learn_data['result']
+
+# arr にマスクをかけてdrop_rate の割合で0にする
+def drop_mask(arr, drop_rate):
+	if(drop_rate == 0):
+		return arr
+	size = arr.size
+	b = np.random.rand(size) # [1,3,6,0,3,4,7,1,2,0]
+	arr[b < drop_rate] = 0
+	return arr
+
+# 出力1の入力を求める
+def get_optimal_stimulation(learn_data):
+	optimal_output = np.array([1])
+	layer_num = learn_data["layer_num"]
+	for i in range(layer_num - 1): # 0 1
+
+		before_activ =  apply_vector(optimal_output, logit)
+		ws = learn_data["layers"][layer_num - i - 1]["W"]
+		optimal_output = get_input_from_output(ws, before_activ)
+	return optimal_output
+
+# 
+def get_input_from_output(ws, output):
+	height = ws.shape[0]
+	width = ws.shape[1]
+
+	# ws を定数項部分とそれ以外に分ける
+	w1 = ws[0:height, 0:width- 1]   
+	w2 = ws[0:height, width-1: width].transpose()[0]
+	b2 = output - w2			# ws * [input,1] = output
+								# [w1 w2] * [input,1] = output
+	w1_i = np.linalg.pinv(w1)   # w1 * input = output - w2 = b2
+	
+	return np.dot(w1_i, b2)
+
+# 最初の層の最適入力
+def get_optimal_stimulation_first(learn_data):
+	ws = learn_data["layers"][1]["W"]
+	w2 = np.dot(ws.transpose(), ws)  # transpose(arr) * transpose(ws) * ws * arr が最大となるときのarr を最適入力と考える(ただしarr は正規化されちぇいる)
+	
+	ws2 =  learn_data["layers"][2]["W"][0]
+	print ws2.shape
+	ws2_size = ws2.shape[0]
+	pm = np.ones(ws2_size) # 1, -1 行列
+	pm[np.where(ws2 < 0)] = -1
+	pm = pm[0:ws2_size -1]
+
+	ws = ws*pm[:, np.newaxis]
+	ws_sum = np.sum(ws, axis=0)
+	size = ws_sum.shape[0]
+	ave = np.average(ws_sum)
+	print ws_sum.max()
+	print ws_sum.min()
+	optimal_input = np.zeros(size)
+	optimal_input[np.where(ws_sum > ave + 2)] = 1
+	optimal_input = optimal_input[0:size -1 ]
+	return ws_sum[0: size -1]
+	return optimal_input
+
+
+	eig = max_eig(w2) # 二次形式の最大値はレイリー商の最大値と考えられ、最大固有値の固有ベクトルとなる
+	size =  eig.shape[0]
+	optimal_input =  eig[0:size -1]
+	min_num = optimal_input.min()
+	optimal_input = optimal_input - min_num
+	optimal_input = np.array(optimal_input * (size - 1)/25, np.float64)
+	return optimal_input
+
+# 最大固有値の固有ベクトル
+def max_eig(ws):
+	la, v = np.linalg.eig(ws)
+	index = np.where(la==max(la))[0][0]
+	return  v[:, index]
+
 
 # 画像前処理
 # 256*256 => 64*64 になる
@@ -531,9 +616,9 @@ def activation(x):
 
 # activation の微分を得る ただし引数は sigmoid(x) = y
 def dif_activation(y):
-	global sigmoid_a, is_sigmoid
+	global is_sigmoid
 	if (is_sigmoid == 1):
-		return sigmoid_a * y * (1.0 - y)
+		return y * (1.0 - y)
 
 	dif = 1.0
 	if(y == 0.0):
@@ -542,10 +627,18 @@ def dif_activation(y):
 
 #@np.vectorize
 def sigmoid(x):
-	global sigmoid_a
 	if(x < -709): # over flow 対策 x が十分小さいとき、sigmoid(x) = 0となる (exp(x) がoverflowする)
 		return 0
-	return 1.0/(1.0+np.exp(-x*sigmoid_a))
+	return 1.0/(1.0+np.exp(-x))
+
+# sigmoidの逆関数
+def logit(x):
+	print x
+	if(x == 0):
+		return -10000
+	if(x == 1):
+		return 10000
+	return np.log(x/(1.0-x))
 
 def soft_max(x_arr):
 	parent_e = 0.0
@@ -589,14 +682,13 @@ def _backward(ws, xs, ys, delta_vec, old_ws_delta):
 
 # 隠れ層のデルタを計算
 def calc_delta_vec_in_hidden_layer(ys, child_ws, child_delta_vec):
-	global sigmoid_a
 	w_size_in_child_ws = get_matrix_width(child_ws)
 
 	if child_ws.ndim == 1: # 1次元の場合、転置できないため例外対応
 		mod_child_ws = child_ws[0:w_size_in_child_ws-1].reshape([w_size_in_child_ws - 1, 1])
 	else:
 		mod_child_ws = (np.transpose(child_ws))[0:w_size_in_child_ws - 1] # 転置して定数項の部分を削除
-	return np.dot(mod_child_ws, child_delta_vec) * sigmoid_a* ((np.ones(ys.size) - ys) * ys)
+	return np.dot(mod_child_ws, child_delta_vec) * ((np.ones(ys.size) - ys) * ys)
 
 # [[arr],
 #  [arr],
@@ -677,7 +769,7 @@ def search_one(learn_data, img):
 		
 			sliced_img = im.crop((x, y, x + input_data['input_width'], y+ input_data['input_height']))
 			arr = convert_arr_from_img(np.array(sliced_img)/256.0)
-			result = forward_all(learn_data, arr)
+			result = forward_all(learn_data, arr, is_drop = False)
 			
 			if max_result < result:
 				max_result = result
