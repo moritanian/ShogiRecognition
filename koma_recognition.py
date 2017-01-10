@@ -70,7 +70,12 @@ class KomaRecognition:
 		# board position　処理に数え上げ方式（hough変換なし）を使う
 		self.__board_position_old = False
 
+	def set_col_row_ave(self, col_ave, row_ave):
+		self.__col_ave = col_ave
+		self.__row_ave = row_ave
 
+	def get_col_and_row(self):
+		return [self.__col_ave, self.__row_ave]
 
 	def get_probability(self, ban_matrix, pos, koma):
 		koma_abs = abs(koma)
@@ -88,7 +93,7 @@ class KomaRecognition:
 			self.SengoLearnW = pickle.load(f)
 		return self.__get_probability(self.SengoLearnW, ban_matrix, pos)
 
-	def dump_learn_data(self, learn_data, koma):
+	def dump_learn_data(self, learn_data, koma = 0):
 		koma_abs = koma
 		if(koma_abs <0):
 			koma_abs = -koma_abs
@@ -96,7 +101,7 @@ class KomaRecognition:
 		pickle.dump(learn_data, f)
 		f.close()
 
-	def load_learn_data(self, koma):
+	def load_learn_data(self, koma = 0):
 		koma_abs = koma
 		if(koma_abs < 0):
 			koma_abs = -koma
@@ -730,8 +735,8 @@ class KomaRecognition:
 			return (None, [0,0])
 
 		piece_left = 0
-		self.__cut_width = 24 # 30
-		self.__cut_off = 10 # 4
+		self.__cut_width = 32 # 30
+		self.__cut_off = 4 # 4
 		self.__cut_height = self.__col_ave - self.__cut_off
 		
 		if(edge_lines[0] != []):

@@ -18,19 +18,23 @@ def forward(x_data, y_data, model, train= True):
 
 def recog(x_data, y_data, model):
 	(y, t) = _forward(x_data, y_data, model, train = False)
-	ret = []
-	for ans_arr in y.data:
-		ans_arr = np.array(ans_arr)
-		ret.append(ans_arr.argmax())
-	print ( F.softmax_cross_entropy(y, t).data, F.accuracy(y, t).data)
-	return ret
+	cross_entropy =  F.softmax_cross_entropy(y, t).data
+	accuracy = F.accuracy(y, t).data
+	return (y.data, cross_entropy, accuracy)
 
 def learn(x_data, y_data, class_num = 2):
+
+	batchsize = 100
 
 	# 訓練用とtest に分ける
 	size = len(x_data)
 	N = int(size * 0.8)
 	N_test = size - N
+	
+	a = N_test%batchsize
+	N_test -= a
+	N += a
+	
 	x_train = x_data[0:N]
 	y_train = y_data[0:N]
 	x_test = x_data[N:size]
@@ -54,8 +58,8 @@ def learn(x_data, y_data, class_num = 2):
 
 	print "data set num = " + str(len(x_train))
 	# 多層パーセプトロンの定義
-	model = FunctionSet(l1=F.Linear( input_size, input_size*2),
-	                    l2=F.Linear(input_size*2, output_size))
+	model = FunctionSet(l1=F.Linear( input_size, input_size/2),
+	                    l2=F.Linear(input_size/2, output_size))
 
 	# Setup an optimizer
 	optimizer = optimizers.Adam()
@@ -64,7 +68,7 @@ def learn(x_data, y_data, class_num = 2):
 	# 勾配計算
 	# ミニバッチを初期化
 	n_epoch = 20
-	batchsize = 36
+	
 	
 	# Learning loop
 	for epoch in xrange(1, n_epoch+1):

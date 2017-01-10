@@ -1406,13 +1406,17 @@ def test(koma = 2):
 		print "leran data num = " + str(len(x_data))
 		import chain_recog 
 		model = chain_recog.learn(np.array(x_data, np.float32), np.array(y_data, np.int32), 8)
-		komaRecognition.dump_learn_data(model)
+		col_and_row = komaRecognition.get_col_and_row()
+		learn_data = [model, col_and_row[0], col_and_row[1]]
+		komaRecognition.dump_learn_data(learn_data)
 
 def test2():
 	komaRecognition = koma_recognition.KomaRecognition(is_learning = False)
-	komaRecognition.set_col_row_ave(47.169,42.5)
+	[model, col_ave, row_ave] = komaRecognition.load_learn_data()
+	komaRecognition.set_col_row_ave(col_ave, row_ave)
+
 	file = "init_ban1.jpg"
-	i = 17
+	i = 18
 	file =  "images/init_ban" + str(i) + ".jpg"
 	im = Image.open(file)
 	ban_matrix = BanMatrix(im)
@@ -1420,8 +1424,17 @@ def test2():
 	ban_matrix.set_init_placement()
 	(x_data, y_data) = make_for_chainer_from_one_pic(im, ban_matrix, komaRecognition)
 	import chain_recog 
-	model = komaRecognition.load_learn_data()
-	print chain_recog.recog(np.array(x_data, np.float32), np.array(y_data, np.int32), model)	
+	#model = komaRecognition.load_learn_data()
+	
+
+	(result, cross_entropy, accuracy) = chain_recog.recog(np.array(x_data, np.float32), np.array(y_data, np.int32), model)	
+	ret = []
+	for ans_arr in result:
+		ans_arr = np.array(ans_arr)
+		ret.append(ans_arr.argmax())
+	print ret
+	print result[36]
+	print accuracy
 
 # print をラップする
 
@@ -1544,7 +1557,7 @@ if __name__ == '__main__':
 	#main()
 	#sengo_test()
 	#koma_test(test_only = True)
-	test2()
+	test()
 
 
 
