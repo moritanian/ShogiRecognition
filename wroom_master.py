@@ -48,7 +48,7 @@ class WroomHost:
 		self.test_hz = 100
 
 		self.__end_f = False
-		self.bind_ip = '192.168.179.6' # 下記が使えない場合は指定するしかなさそう
+		self.bind_ip = '192.168.179.3' # 下記が使えない場合は指定するしかなさそう
 		#self.bind_ip = socket.gethostbyname(socket.gethostname())
 
 		self.bind_port = 9999
@@ -106,10 +106,23 @@ class WroomHost:
 			client_handler.start()
 			# 処理を開始する。
 
+	# mode 変更
+	def change_mode(self):
+		if(self.mode == self.VOICE_MODE):
+			self.mode = self.KIHU_MODE
+			if(self.log_obj):
+				self.log_obj.log("set kihu mode")
+		else:
+			self.mode = self.VOICE_MODE
+			if(self.log_obj):
+				self.log_obj.log("set voice mode")
+
 	# TODO クソコードすぎる。処理を分割する
 	def handle_client(self, client_socket):
 		self.connection_num += 1
 		self.clients.append(client_socket)
+		if(self.log_obj.main_socket()):
+			self.log_obj.main_socket().set_info_status(1, node_id = 11)
 		bufsize=1024
 		request = client_socket.recv(bufsize)
 
@@ -127,7 +140,13 @@ class WroomHost:
 				print("send config")
 
 			while(not(self.__end_f)):
-				request = client_socket.recv(bufsize)
+				try:
+					request = client_socket.recv(bufsize)
+				except sockt.timeout:
+					if(self.log_obj):
+						self.log_obj.warning("socket timeout")
+						return
+
 				if(self.log_obj):
 					self.log_obj.log (str('[*] while : %s' % request))
 				else:

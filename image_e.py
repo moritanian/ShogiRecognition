@@ -640,14 +640,21 @@ class PlayFlow:
 
 						#self.__capture_count = 0
 						#ban_matrix.img.save(self.__capture_path)
-						cv2.imwrite(self.__capture_path, np.array(ban_matrix.img))
+						im = np.array(copy.copy(ban_matrix.img))
+						self.koma_recognition.draw_board_position_list(im)
+						cv2.imwrite(self.__capture_path, np.array(im))
 						self.advanced_img = ban_matrix.img
 
 	 			#print ret
 				if ret['result'] == 1 and ret['changed'] == 1:
 					# 手を進める
-					ban_matrix.img.save(self.__capture_path)
+					#ban_matrix.img.save(self.__capture_path)
+
 					self.advanced_img = ban_matrix.img
+
+					im = np.array(copy.copy(ban_matrix.img))
+					self.koma_recognition.draw_board_position_list(im)
+					self.koma_recognition.save_image(im, self.__capture_path)
 
 					self.__capture_count = 0
 
@@ -1199,7 +1206,7 @@ def koma_test(koma = 2, test_only = False):
 			print "waring set masu img"
 
 
-	max_epoch =1000
+	max_epoch =100
 	if(test_only):
 		max_epoch = 1
 		learnW = komaRecognition.load_learn_data(koma)
@@ -1415,6 +1422,9 @@ def main():
 				
 				if(main_socket):
 					main_socket.set_info_status(1, node_id = 7)
+			else: # wroom host mode 切り替え
+				wroom.change_mode()
+
 
 		elif key == ord("y") or panel_node_id == 11: # wroom 認識(for debug)
 			log_obj.log("wroom debug", 11)

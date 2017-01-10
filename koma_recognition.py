@@ -271,6 +271,8 @@ class KomaRecognition:
 					masu.is_koma = self.is_koma(self.max_pooling(r_img)/255)
 					ban_matrix.masu_data[x][y] = masu
 
+			self.board_position_list = board_position_list
+
 		return 1
 
 	def add_line(self, img, line_list):
@@ -486,8 +488,6 @@ class KomaRecognition:
 
 
 
-
-
 	# 扇子の先端位置取得
 	# 差分を利用
 	def get_tip_abspos(self, back_img, img, edge_abspos):
@@ -500,12 +500,13 @@ class KomaRecognition:
 		im = back_img.crop(ban_region)
 		im2 = img.crop(ban_region)
 
+		path = "temp/back_img2.jpg"	
+		self.save_image(np.array(im2), path)
+
 		im3,  im_edge = self.bg_diff(im, im2)
 
 		find = np.where(im3 == 0)
 	
-		print edge_abspos
-
 		size = None
 		if find:
 			size = find[0].size
@@ -643,7 +644,7 @@ class KomaRecognition:
 		im_mask = cv2.medianBlur(im_mask,blur)
 
 		# closing opening
-		kernel = np.ones((10,10),np.uint8)
+		kernel = np.ones((8,8),np.uint8) # 10 10
 	
 		im_mask = cv2.morphologyEx(im_mask, cv2.MORPH_CLOSE, kernel)
 		im_mask = cv2.morphologyEx(im_mask, cv2.MORPH_OPEN, kernel)
@@ -861,13 +862,25 @@ class KomaRecognition:
 		Image.fromarray(img).save(path)
 		#cv2.imwrite(path, img)
 
+	def draw_board_position_list(self, im):
+		for l in self.board_position_list:
+			for ll in l:
+				x = ll[0][0]
+				y = ll[0][1]
+				x2 = ll[1][0]
+				y2 = ll[1][1]
+				cv2.circle(im,(x,y),2,(0,0,255),3)
+				self.draw_frame(im, (x,y), (x2, y2), wid = 1)
+		return im
+
+
 	# こまの先後を判定するサンプル
 	def test_sample(self):
 		import image_e
 		#img = Image.open("server/capture.jpg")
 		img = Image.open("./images/init_ban1.jpg")
 
-		img = Image.fromarray(ndimage.rotate(img, 2))
+		img = Image.fromarray(ndimage.rotate(img, -2))
 	
 		#img = Image.open("./init_ban2.jpg")
 		img_ori = copy.copy(img)
@@ -941,14 +954,9 @@ class KomaRecognition:
 
 		board_position_list = self.get_board_position(im2)
 		#print board_position_list
-		for l in board_position_list:
-			for ll in l:
-				x = ll[0][0]
-				y = ll[0][1]
-				x2 = ll[1][0]
-				y2 = ll[1][1]
-				cv2.circle(arr_img,(x,y),2,(0,0,255),3)
-				self.draw_frame(arr_img, (x,y), (x2, y2), wid = 1)
+		self.board_position_list = board_position_list
+		self.draw_board_position_list(arr_img)
+		
 		self.save_image(arr_img, "result3.jpg")
 
 
