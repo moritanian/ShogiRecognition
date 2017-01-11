@@ -12,6 +12,9 @@ import time
 import math
 #import import_cifar
 
+# 勾配降下法について わかりやすい資料
+# http://postd.cc/optimizing-gradient-descent/
+
 # global
 learn_weight = 0.0240 #0.058 # 0.2
 is_sigmoid = 1

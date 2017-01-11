@@ -11,6 +11,7 @@ import random
 import DNN
 import square_space
 import pickle
+import chain_recog
 
 import threading
 import sys
@@ -48,9 +49,6 @@ class KomaRecognition:
 		self.SengoLearnFile = "sengo_recog.txt"
 		self.SengoLearnW = None
 		self.KomaLearnFile = "learn_data/koma%d_recog.txt"
-		self.KomaLearnW = []
-		for i in range(8): # magic number
-			self.KomaLearnW.append(None)
 
 
 		snippet_img_arrs = []
@@ -60,6 +58,12 @@ class KomaRecognition:
 
 		self.__row_ave = 0
 		self.__col_ave = 0
+
+
+		
+		[model, col_ave, row_ave] = self.load_learn_data()
+		self.set_col_row_ave(col_ave, row_ave)
+		self.model = model
 
 		self.__piece_width_ave = 0
 
@@ -77,21 +81,26 @@ class KomaRecognition:
 	def get_col_and_row(self):
 		return [self.__col_ave, self.__row_ave]
 
-	def get_probability(self, ban_matrix, pos, koma):
-		koma_abs = abs(koma)
-		if self.KomaLearnW[koma_abs  -1] == None:
-			self.KomaLearnW[koma_abs -1] = self.load_learn_data(koma_abs)
-		is_inv = False
-		if koma < 0:
-			isinv = True
+	# koma_listの中で指定した位置のこまである可能性が高いか 
+	def get_most_probable_ans(self, ban_matrix, pos, koma_list):
+		snippet_img_arr = self.get_koma_img_arr_threshold(ban_matrix, pos[0], pos[1])
+		if(koma_list[0] <0):
+			img = self.inverse_img_arr(snippet_img_arr)
+		else:
+			img = snippet_img_arr
 
-		return self.__get_probability(self.KomaLearnW[koma_abs], ban_matrix, pos,  is_inv)
+		x_data = [img]
+		y_data = [abs(koma_list[0]) -1]
+		(result, cross_entropy, accuracy) = chain_recog.recog(np.array(x_data, np.float32), np.array(y_data, np.int32), self.model)	
+		print "chain recog result"
+		print result
+		candidate_eval = np.zeros(len(koma_list))
+		for i in range(len(koma_list)):
+			candidate_eval[i] = result[0][abs(koma_list[i]) -1]
 
-	def get_sengo_probability(self, ban_matrix, pos):
-		if self.SengoLearnW == None:
-			f = open(self.SengoLearnFile)
-			self.SengoLearnW = pickle.load(f)
-		return self.__get_probability(self.SengoLearnW, ban_matrix, pos)
+		max_index = np.argmax(candidate_eval)
+		return (koma_list[max_index], accuracy)
+
 
 	def dump_learn_data(self, learn_data, koma = 0):
 		koma_abs = koma
@@ -111,13 +120,6 @@ class KomaRecognition:
 		learn_data = pickle.load(f)
 		f.close()
 		return learn_data
-
-	def __get_probability(self, learn_data, ban_matrix, pos, is_inv = False):
-		arr = ban_matrix.get_masu(pos[0], pos[1]).snippet_img_arr
-		if is_inv:
-			arr = self.inverse_img_arr(arr)
-		ret =  DNN.recog(learn_data, arr, [0])
-		return ret['result']
 
 	# 盤面進行時に呼び出される想定 
 	# 盤面データから画像を蓄え、非同期に学習していく
@@ -718,6 +720,12 @@ class KomaRecognition:
 
 	def get_koma_img_arr_threshold(self, ban_matrix, x, y):
 		masu = ban_matrix.get_masu(x,y)
+		if(masu.snippet_img == None):
+			if(self.log_obj):
+				self.log_obj.warning("get_koma_img_arr_threshold err. no koma in your pointing pos" )
+			else: 
+				print "get_koma_img_arr_threshold err. no koma in your pointing pos"
+			return None
 		(cut_img, offset) = self.cut_along_edge_lines(masu.snippet_img)
 		if(cut_img is None):
 			return None

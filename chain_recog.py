@@ -58,8 +58,8 @@ def learn(x_data, y_data, class_num = 2):
 
 	print "data set num = " + str(len(x_train))
 	# 多層パーセプトロンの定義
-	model = FunctionSet(l1=F.Linear( input_size, input_size/2),
-	                    l2=F.Linear(input_size/2, output_size))
+	model = FunctionSet(l1=F.Linear( input_size, input_size),
+	                    l2=F.Linear(input_size, output_size))
 
 	# Setup an optimizer
 	optimizer = optimizers.Adam()

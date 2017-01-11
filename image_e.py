@@ -759,7 +759,10 @@ class PlayFlow:
 
 					elif(len(cap_variety) > 1):
 						# 複数打った駒候補があるときは識別する
-						rec = self.recog_koma_in_list(ban1, dif_list[0], cap_variety)
+						#rec = self.recog_koma_in_list(ban1, dif_list[0], cap_variety)
+						print "koma utsu"
+						print dif_list[0]
+						(rec, acc) =  self.koma_recognition.get_most_probable_ans(ban2, dif_list[0], cap_variety)
 						kihu = Kihu(self.teban, self.epoch + 1, rec, [], dif_list[0], revival = 1)
 						result = 1
 						changed = 1
@@ -769,7 +772,7 @@ class PlayFlow:
 				# todo どこに移動したのか特定, TODO 成り判定も必要
 				target = ban1.get_koma(dif_list[0][0], dif_list[0][1])
 				movable_cap_list = self.get_movable_list(ban1, dif_list[0], capture = True) # 駒取のある移動地点のリストを取得
-				max_probab = -1.0
+				max_probab = -100.0
 			
 				if(len(movable_cap_list) == 1):
 					next_pos = movable_cap_list[0]
@@ -778,14 +781,17 @@ class PlayFlow:
 				elif(len(movable_cap_list) > 0):
 					for cap_pos in movable_cap_list:
 						pred_sengo = self.koma_recognition.predict_sengo(ban2, cap_pos) # 値は＋－にふれる　＃見方の駒のうち、絶対値最大のものを進んだ地点とする
-						if(max_probab < abs(pred_sengo) and self.teban * pred_sengo > 0):
-							max_probab = abs(pred_sengo)
+
+						if(max_probab < pred_sengo * self.teban):
+							max_probab = pred_sengo* self.teban
 							next_pos = cap_pos
 					
 					kihu = Kihu(self.teban, self.epoch + 1, target, dif_list[0], next_pos)
 
 				if(len(movable_cap_list) > 0):
 					if kihu.promotion_validation(): # なっている可能性あり
+						print "koma take is prom"
+						print next_pos
 						prom_koma = kihu.is_promotion(target)
 						is_prom = self.recog_is_promotion(ban2, self.teban, next_pos, target)
 						if is_prom:
@@ -908,34 +914,18 @@ class PlayFlow:
 	# 識別むつかしそう　常にTrueでもいい？
 	def recog_is_promotion(self, ban_matrix, teban, pos, target):
 		kihu = Kihu(teban, self.epoch + 1, target, [], pos)
-		prom_target = kihu.is_promotion()
+		prom_target = kihu.is_promotion() # 冗長な気がする
 		if prom_target == 0:
 			return False
-		prob = self.get_koma_probability(ban_matrix, pos, target)
-		self.log_obj.log("recog is prom" + str(prob))
-		return prob < 0.5
+
+		(rec, acc) =  self.koma_recognition.get_most_probable_ans(ban_matrix, pos, [target])
+
+		self.log_obj.log("recog is not prom " + str(acc))
+		return acc < 0.5
 		#koma_list = [target, prom_target]
 		#koma = self.recog_koma_in_list(ban_matrix, pos, koma_list)
 		#return koma == koma_list[1]
 
-	# 駒候補の中から識別する 先後は別
-	# 先後判定してからやりたい
-	def recog_koma_in_list(self, ban_matrix, pos, koma_list):
-		probab_list = []
-		for index ,koma in enumerate(koma_list):
-			probab_list.append(self.get_koma_probability(ban_matrix, pos, koma))
-		index =  probab_list.index(max(probab_list))
-		return koma_list[index]
-
-	# 単体識別 指定した駒であるか 確からしさの値を返す
-	def get_koma_probability(self, ban_matrix, pos, koma, is_sengo_only = False):
-		if is_sengo_only: # 先後のみ判定（先手なら１）
-			prob = self.koma_recognition.get_sengo_probability(ban_matrix, pos)
-		else:
-			prob = self.koma_recognition.get_probability(ban_matrix, pos, koma)
-		print pos
-		print "prob = " + str(prob)
-		return prob
 
 	def apery_assist(self, apery):
 		global main_socket
@@ -993,72 +983,6 @@ def color_HSV(color):
 	v = max_val
 	s = (max_val - min_val)/max_val
 	return np.array([h,s,v])
-
-
-
-
-def make_data():
-	HU = 1
-	KYO = 2
-	KEI = 3
-	GIN = 4
-	KIN = 5
-	KAK = 6
-	HIS = 7
-	OHO = 8
-	#ban_data = ban_init()
-	ban_data = np.zeros([9,9])
-	for i in  range(9):
-		for j in range(9):
-			if(abs(i - j)%4 == 0):
-				ban_data[i][j] = 1
-			if(abs(i - j)%4 == 2):
-				ban_data[i][j] = -1
-	print_ban(ban_data)
-
-	x_data = []
-	y_data = []
-
-	learn_koma = -2;
-	file_num = 1
-	if(learn_koma == 0):
-		file_num = 4
-		learn_masu = [[0,0], [0,1], [0,2], [0,3], [0,4], [0,5], [0,6], [0,7], [0,8], 
-							[1,1], [1,7], [2,0], [2,8],
-					[8,0], [8,1], [8,2], [8,3], [8,4], [8,5], [8,6], [8,7], [8,8], 
-							[7,1], [7,7], [6,0], [6,8], [4,3], [4,4], [4,5], [4,6]]
-	elif(learn_koma == HU):
-		file_num = 20
-		learn_masu = [[0,0],[1,0],[2,0],[6,0], [7,0], [8,0], [0,2],[1,2],[2,2],[6,2], [7,2], [8,2]]
-
-	elif(learn_koma == KEI):
-		file_num = 20
-		learn_masu = [[0,1],[1,1],[2,1],[6,1], [7,1], [8,1], [0,7],[1,7],[2,7],[6,7], [7,7], [8,7]]
-
-	elif(learn_koma == -1):	# あるかないか
-		file_num = 19
-		learn_masu = [[1,0],[1,1],[1,2],[1,3],[1,4],[1,5],[1,6],[1,7],[1,8],
-						[2,0],[2,1],[2,2],[2,3],[2,4],[2,5],[2,6],[2,7],[2,8],
-						[3,0],[3,1],[3,2],[3,3],[3,4],[3,5],[3,6],[3,7],[3,8]
-						 ]
-	elif(learn_koma == -2): # 先後
-		file_num = 19
-		learn_masu = []
-		for i in range(9):
-			for j in range(9):
-				if(abs(i -j) % 2 == 0):
-					learn_masu.append([i,j])
-	
-
-	cnt = 0
-	for i in range(file_num):
-		path = "init_ban" + str(i + 101) + ".jpg"
-		im = Image.open(path)
-		ret = make_data_from_one_pic(im, ban_data, learn_masu , learn_koma )
-		x_data += ret['x_data']
-		y_data += ret['y_data']
-
-	return {'x_data': x_data, 'y_data': y_data}
 
 
 # 独立に学習する (できるだけ既存のクラス、メソッドをしよう)
@@ -1300,6 +1224,8 @@ def make_for_chainer_from_one_pic(img, ban_matrix, komaRecognition):
 
 			for snippet_img_arr in snippet_img_arrs:
 				if(snippet_img_arr is None):
+					print "continue "
+					print (x, y)
 					continue
 
 				abs_target = abs(target)
@@ -1417,12 +1343,13 @@ def test2():
 
 	file = "init_ban1.jpg"
 	i = 18
-	file =  "images/init_ban" + str(i) + ".jpg"
+	#file =  "images/init_ban" + str(i) + ".jpg"
 	im = Image.open(file)
 	ban_matrix = BanMatrix(im)
 	ret = komaRecognition.set_masu_from_one_pic(ban_matrix)
 	ban_matrix.set_init_placement()
 	(x_data, y_data) = make_for_chainer_from_one_pic(im, ban_matrix, komaRecognition)
+	
 	import chain_recog 
 	#model = komaRecognition.load_learn_data()
 	
@@ -1433,7 +1360,7 @@ def test2():
 		ans_arr = np.array(ans_arr)
 		ret.append(ans_arr.argmax())
 	print ret
-	print result[36]
+	#print result[36]
 	print accuracy
 
 # print をラップする
@@ -1554,10 +1481,10 @@ def main():
 	print "successfully ended"
 
 if __name__ == '__main__':
-	#main()
+	main()
 	#sengo_test()
 	#koma_test(test_only = True)
-	test()
+	#test2()
 
 
 
