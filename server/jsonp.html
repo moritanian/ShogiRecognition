@@ -202,7 +202,7 @@ console.log("start");
         $(".node-log").text( node_list[node_id - 1]["log"]);
         if(node_id == 5){
             $(".ban-capture").removeClass("hidden");
-            $(".node-log").text("<h2>TODO  画像に認識を表す赤枠つけたい</h2>");
+           
         }else{
             $(".ban-capture").addClass("hidden");
         }
@@ -409,12 +409,14 @@ console.log("start");
 <body>
 <div class="node ellipse shadowing" id="ori-node" style="top: 20px;"><div class="node-title flexiblebox">server</div></div>
 
+<!--
 <form name="form1" onsubmit="return send()">
   <input type="text" name="a" value="1"> + 
   <input type="text" name="b" value="2">
   <input type="submit" value="計算" />
 </form>
 <div id="result">計算結果</div>
+-->
 
 <button class="update-button">
     update
